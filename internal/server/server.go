@@ -1,0 +1,40 @@
+package server
+
+import (
+	"log"
+
+	"github.com/gin-gonic/gin"
+
+	"hips/internal/handler"
+)
+
+type Server struct {
+	router        *gin.Engine
+	imageHandler  *handler.ImageHandler
+	healthHandler *handler.HealthHandler
+}
+
+func NewServer(imageHandler *handler.ImageHandler, healthHandler *handler.HealthHandler) *Server {
+	router := gin.Default()
+
+	router.Use(handler.CORSMiddleware())
+
+	return &Server{
+		router:        router,
+		imageHandler:  imageHandler,
+		healthHandler: healthHandler,
+	}
+}
+
+func (s *Server) SetupRoutes() {
+	s.router.GET("/*path", s.imageHandler.HandleRequest)
+}
+
+func (s *Server) Start(port string) error {
+	s.SetupRoutes()
+
+	log.Printf("Image proxy service starting on port %s", port)
+	log.Printf("Example URL: http://localhost:%s/path/to/image.jpg?w=300&h=200&q=85&f=avif", port)
+
+	return s.router.Run(":" + port)
+}
