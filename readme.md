@@ -12,6 +12,7 @@ hips/
 │   ├── server/
 │   └── service/
 ├── pkg/
+│   ├── concurrent/
 │   ├── errors/
 │   └── imaging/
 ├── scripts/
@@ -22,7 +23,7 @@ hips/
 
 ### 环境要求
 
-- Go 1.21+
+- Go 1.24+
 - libvips
 - Cloudflare R2 账户
 
@@ -34,12 +35,24 @@ sudo apt-get install libvips-dev
 
 ### 环境变量
 
+#### 基础配置
+
 ```bash
 export R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
 export R2_ACCESS_KEY=your-access-key
 export R2_SECRET_KEY=your-secret-key
 export R2_BUCKET=your-bucket-name
-export PORT=8080  # 可选
+export PORT=8080
+```
+
+#### 并发处理配置（可选）
+
+```bash
+export MAX_WORKERS=16          # 最大worker数，默认为CPU核心数*2
+export MAX_QUEUE_SIZE=160      # 最大队列大小，默认为MAX_WORKERS*10
+export TASK_TIMEOUT=30s
+export ENABLE_ASYNC=true       # 启用异步处理，默认true
+export BUFFER_SIZE=100         # 缓冲区大小，默认100
 ```
 
 ### 构建和运行
