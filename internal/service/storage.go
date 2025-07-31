@@ -3,6 +3,8 @@ package service
 import (
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -20,12 +22,38 @@ type R2StorageService struct {
 	cache    cache.CacheService
 }
 
-func NewR2StorageService(cfg *config.R2Config, cacheService cache.CacheService) (*R2StorageService, error) {
+func NewR2StorageService(cfg *config.R2Config, networkCfg *config.NetworkConfig, cacheService cache.CacheService) (*R2StorageService, error) {
+	// 创建优化的HTTP客户端，支持连接池和长连接
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			// 连接池配置
+			MaxIdleConns:        networkCfg.MaxIdleConns,
+			MaxIdleConnsPerHost: networkCfg.MaxIdleConnsPerHost,
+			MaxConnsPerHost:     networkCfg.MaxConnsPerHost,
+
+			// 连接超时配置
+			DialContext: (&net.Dialer{
+				Timeout:   networkCfg.DialTimeout,
+				KeepAlive: networkCfg.KeepAlive,
+			}).DialContext,
+
+			// 长连接配置
+			IdleConnTimeout:       networkCfg.IdleConnTimeout,
+			TLSHandshakeTimeout:   10 * time.Second, // TLS握手超时
+			ExpectContinueTimeout: 1 * time.Second,  // Expect Continue超时
+
+			// 压缩配置
+			DisableCompression: networkCfg.DisableCompression,
+		},
+		Timeout: networkCfg.RequestTimeout,
+	}
+
 	sess, err := session.NewSession(&aws.Config{
 		Region:           aws.String("auto"),
 		Endpoint:         aws.String(cfg.Endpoint),
 		S3ForcePathStyle: aws.Bool(true),
 		Credentials:      credentials.NewStaticCredentials(cfg.AccessKey, cfg.SecretKey, ""),
+		HTTPClient:       httpClient, // 使用优化的HTTP客户端
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS session: %w", err)

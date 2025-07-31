@@ -24,7 +24,7 @@ func main() {
 
 	cacheService := cache.NewMemoryCache(cfg.Cache.TTL, cfg.Cache.Cleanup)
 
-	storageService, err := service.NewR2StorageService(&cfg.R2, cacheService)
+	storageService, err := service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
 	if err != nil {
 		log.Fatal("Failed to create storage service:", err)
 	}

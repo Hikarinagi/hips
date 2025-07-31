@@ -13,6 +13,7 @@ type Config struct {
 	R2         R2Config
 	Cache      CacheConfig
 	Concurrent ConcurrentConfig
+	Network    NetworkConfig
 }
 
 type ServerConfig struct {
@@ -39,6 +40,17 @@ type ConcurrentConfig struct {
 	BufferSize   int           `json:"buffer_size"`
 }
 
+type NetworkConfig struct {
+	MaxIdleConns        int           `json:"max_idle_conns"`
+	MaxIdleConnsPerHost int           `json:"max_idle_conns_per_host"`
+	MaxConnsPerHost     int           `json:"max_conns_per_host"`
+	DialTimeout         time.Duration `json:"dial_timeout"`
+	KeepAlive           time.Duration `json:"keep_alive"`
+	IdleConnTimeout     time.Duration `json:"idle_conn_timeout"`
+	RequestTimeout      time.Duration `json:"request_timeout"`
+	DisableCompression  bool          `json:"disable_compression"`
+}
+
 const (
 	CacheTTL     = 24 * time.Hour
 	CacheCleanup = 30 * time.Minute
@@ -47,6 +59,15 @@ const (
 	DefaultMaxQueueSize = 0
 	DefaultTaskTimeout  = 30 * time.Second
 	DefaultBufferSize   = 100
+
+	// 网络配置默认值
+	DefaultMaxIdleConns        = 100
+	DefaultMaxIdleConnsPerHost = 20
+	DefaultMaxConnsPerHost     = 50
+	DefaultDialTimeout         = 10 * time.Second
+	DefaultKeepAlive           = 30 * time.Second
+	DefaultIdleConnTimeout     = 90 * time.Second
+	DefaultRequestTimeout      = 60 * time.Second
 )
 
 func Load() (*Config, error) {
@@ -64,6 +85,16 @@ func Load() (*Config, error) {
 			TaskTimeout:  getEnvDurationWithDefault("TASK_TIMEOUT", DefaultTaskTimeout),
 			EnableAsync:  getEnvBoolWithDefault("ENABLE_ASYNC", true),
 			BufferSize:   getEnvIntWithDefault("BUFFER_SIZE", DefaultBufferSize),
+		},
+		Network: NetworkConfig{
+			MaxIdleConns:        getEnvIntWithDefault("NET_MAX_IDLE_CONNS", DefaultMaxIdleConns),
+			MaxIdleConnsPerHost: getEnvIntWithDefault("NET_MAX_IDLE_CONNS_PER_HOST", DefaultMaxIdleConnsPerHost),
+			MaxConnsPerHost:     getEnvIntWithDefault("NET_MAX_CONNS_PER_HOST", DefaultMaxConnsPerHost),
+			DialTimeout:         getEnvDurationWithDefault("NET_DIAL_TIMEOUT", DefaultDialTimeout),
+			KeepAlive:           getEnvDurationWithDefault("NET_KEEP_ALIVE", DefaultKeepAlive),
+			IdleConnTimeout:     getEnvDurationWithDefault("NET_IDLE_CONN_TIMEOUT", DefaultIdleConnTimeout),
+			RequestTimeout:      getEnvDurationWithDefault("NET_REQUEST_TIMEOUT", DefaultRequestTimeout),
+			DisableCompression:  getEnvBoolWithDefault("NET_DISABLE_COMPRESSION", false),
 		},
 	}
 

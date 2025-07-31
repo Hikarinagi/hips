@@ -55,6 +55,19 @@ export ENABLE_ASYNC=true       # 启用异步处理，默认true
 export BUFFER_SIZE=100         # 缓冲区大小，默认100
 ```
 
+#### 网络连接优化配置（可选）
+
+```bash
+export NET_MAX_IDLE_CONNS=100              # 最大空闲连接数，默认100
+export NET_MAX_IDLE_CONNS_PER_HOST=20      # 每个host的最大空闲连接数，默认20
+export NET_MAX_CONNS_PER_HOST=50           # 每个host的最大连接数，默认50
+export NET_DIAL_TIMEOUT=10s                # 连接超时，默认10秒
+export NET_KEEP_ALIVE=30s                  # Keep-Alive时间，默认30秒
+export NET_IDLE_CONN_TIMEOUT=90s           # 空闲连接超时，默认90秒
+export NET_REQUEST_TIMEOUT=60s             # 整体请求超时，默认60秒
+export NET_DISABLE_COMPRESSION=false       # 是否禁用压缩，默认false
+```
+
 ### 构建和运行
 
 ```bash
