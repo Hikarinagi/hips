@@ -2,23 +2,6 @@
 
 切图服务，libvips负责核心的图片处理，gin负责网络请求处理
 
-```
-hips/
-├── cmd/server/
-├── internal/
-│   ├── cache/
-│   ├── config/
-│   ├── handler/
-│   ├── server/
-│   └── service/
-├── pkg/
-│   ├── concurrent/
-│   ├── errors/
-│   └── imaging/
-├── scripts/
-└── docker/
-```
-
 ## 快速开始
 
 ### 环境要求
@@ -35,38 +18,41 @@ sudo apt-get install libvips-dev
 
 ### 环境变量
 
-#### 基础配置
+#### 环境变量配置
 
-```bash
-export R2_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
-export R2_ACCESS_KEY=your-access-key
-export R2_SECRET_KEY=your-secret-key
-export R2_BUCKET=your-bucket-name
-export PORT=8080
-```
-
-#### 并发处理配置（可选）
-
-```bash
-export MAX_WORKERS=16          # 最大worker数，默认为CPU核心数*2
-export MAX_QUEUE_SIZE=160      # 最大队列大小，默认为MAX_WORKERS*10
-export TASK_TIMEOUT=30s
-export ENABLE_ASYNC=true       # 启用异步处理，默认true
-export BUFFER_SIZE=100         # 缓冲区大小，默认100
-```
-
-#### 网络连接优化配置（可选）
-
-```bash
-export NET_MAX_IDLE_CONNS=100              # 最大空闲连接数，默认100
-export NET_MAX_IDLE_CONNS_PER_HOST=20      # 每个host的最大空闲连接数，默认20
-export NET_MAX_CONNS_PER_HOST=50           # 每个host的最大连接数，默认50
-export NET_DIAL_TIMEOUT=10s                # 连接超时，默认10秒
-export NET_KEEP_ALIVE=30s                  # Keep-Alive时间，默认30秒
-export NET_IDLE_CONN_TIMEOUT=90s           # 空闲连接超时，默认90秒
-export NET_REQUEST_TIMEOUT=60s             # 整体请求超时，默认60秒
-export NET_DISABLE_COMPRESSION=false       # 是否禁用压缩，默认false
-```
+| 环境变量 | 描述 | 默认值 | 必须 |
+|---------|------|--------|----------|
+| `R2_ENDPOINT` | Cloudflare R2存储端点地址 | - | ✅ |
+| `R2_ACCESS_KEY` | R2访问密钥 | - | ✅ |
+| `R2_SECRET_KEY` | R2秘密密钥 | - | ✅ |
+| `R2_BUCKET` | R2存储桶名称 | - | ✅ |
+| `PORT` | 服务监听端口 | `8080` | ❌ |
+| `MAX_WORKERS` | 最大worker数量 | CPU核心数×2 | ❌ |
+| `MAX_QUEUE_SIZE` | 最大队列大小 | MAX_WORKERS×10 | ❌ |
+| `TASK_TIMEOUT` | 任务执行超时时间 | `30s` | ❌ |
+| `ENABLE_ASYNC` | 启用异步处理 | `true` | ❌ |
+| `BUFFER_SIZE` | 缓冲区大小 | `100` | ❌ |
+| `NET_MAX_IDLE_CONNS` | 最大空闲连接数 | `100` | ❌ |
+| `NET_MAX_IDLE_CONNS_PER_HOST` | 每个host的最大空闲连接数 | `20` | ❌ |
+| `NET_MAX_CONNS_PER_HOST` | 每个host的最大连接数 | `50` | ❌ |
+| `NET_DIAL_TIMEOUT` | 连接超时时间 | `10s` | ❌ |
+| `NET_KEEP_ALIVE` | Keep-Alive时间 | `30s` | ❌ |
+| `NET_IDLE_CONN_TIMEOUT` | 空闲连接超时时间 | `90s` | ❌ |
+| `NET_REQUEST_TIMEOUT` | 整体请求超时时间 | `60s` | ❌ |
+| `NET_DISABLE_COMPRESSION` | 是否禁用压缩 | `false` | ❌ |
+| `CACHE_L1_ENABLED` | 启用L1内存缓存 | `true` | ❌ |
+| `CACHE_L2_ENABLED` | 启用L2 Redis缓存 | `false` | ❌ |
+| `CACHE_L3_ENABLED` | 启用L3磁盘缓存 | `true` | ❌ |
+| `CACHE_L1_MAX_MEMORY_MB` | L1最大内存限制(MB) | `1024` | ❌ |
+| `CACHE_L2_MAX_MEMORY_MB` | L2最大内存限制(MB) | `3072` | ❌ |
+| `CACHE_L3_MAX_DISK_GB` | L3最大磁盘空间(GB) | `10` | ❌ |
+| `REDIS_ADDR` | Redis服务器地址 | `localhost:6379` | ❌ |
+| `REDIS_PASSWORD` | Redis密码 | - | ❌ |
+| `REDIS_DB` | Redis数据库编号 | `0` | ❌ |
+| `CACHE_DISK_DIR` | 磁盘缓存目录 | `./cache` | ❌ |
+| `CACHE_PROMOTE_THRESHOLD` | 缓存提升访问次数阈值 | `3` | ❌ |
+| `CACHE_DEMOTE_THRESHOLD` | 缓存降级访问次数阈值 | `1` | ❌ |
+| `CACHE_SYNC_INTERVAL` | 缓存同步间隔 | `5m` | ❌ |
 
 ### 构建和运行
 
@@ -106,6 +92,13 @@ http://localhost:8080/path/to/image.jpg?w=300&h=200&q=85&f=webp&blur=2
 ```
 GET /health
 ```
+
+### 缓存层级
+
+- **L1 - 内存缓存**: 最热门的图片，LRU策略，默认1GB
+- **L2 - Redis缓存**: 比较热门的图片，默认3GB（可选）
+- **L3 - 磁盘缓存**: 热门原图，默认10GB
+- **L4 - CDN缓存**: 主要缓存层（由CDN提供）
 
 ## 许可证
 

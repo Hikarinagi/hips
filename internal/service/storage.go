@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -17,9 +18,10 @@ import (
 )
 
 type R2StorageService struct {
-	s3Client *s3.S3
-	bucket   string
-	cache    cache.CacheService
+	s3Client   *s3.S3
+	bucket     string
+	cache      cache.CacheService        // 向后兼容的单层缓存
+	multiCache cache.LayeredCacheService // 多层缓存
 }
 
 func NewR2StorageService(cfg *config.R2Config, networkCfg *config.NetworkConfig, cacheService cache.CacheService) (*R2StorageService, error) {
@@ -52,7 +54,7 @@ func NewR2StorageService(cfg *config.R2Config, networkCfg *config.NetworkConfig,
 		Endpoint:         aws.String(cfg.Endpoint),
 		S3ForcePathStyle: aws.Bool(true),
 		Credentials:      credentials.NewStaticCredentials(cfg.AccessKey, cfg.SecretKey, ""),
-		HTTPClient:       httpClient, // 使用优化的HTTP客户端
+		HTTPClient:       httpClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AWS session: %w", err)
@@ -62,6 +64,49 @@ func NewR2StorageService(cfg *config.R2Config, networkCfg *config.NetworkConfig,
 		s3Client: s3.New(sess),
 		bucket:   cfg.Bucket,
 		cache:    cacheService,
+	}, nil
+}
+
+func NewR2StorageServiceWithMultiCache(cfg *config.R2Config, networkCfg *config.NetworkConfig, multiCache cache.LayeredCacheService) (*R2StorageService, error) {
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			// 连接池配置
+			MaxIdleConns:        networkCfg.MaxIdleConns,
+			MaxIdleConnsPerHost: networkCfg.MaxIdleConnsPerHost,
+			MaxConnsPerHost:     networkCfg.MaxConnsPerHost,
+
+			// 连接超时配置
+			DialContext: (&net.Dialer{
+				Timeout:   networkCfg.DialTimeout,
+				KeepAlive: networkCfg.KeepAlive,
+			}).DialContext,
+
+			// 长连接配置
+			IdleConnTimeout:       networkCfg.IdleConnTimeout,
+			TLSHandshakeTimeout:   10 * time.Second, // TLS握手超时
+			ExpectContinueTimeout: 1 * time.Second,  // Expect Continue超时
+
+			// 压缩配置
+			DisableCompression: networkCfg.DisableCompression,
+		},
+		Timeout: networkCfg.RequestTimeout,
+	}
+
+	sess, err := session.NewSession(&aws.Config{
+		Region:           aws.String("auto"),
+		Endpoint:         aws.String(cfg.Endpoint),
+		S3ForcePathStyle: aws.Bool(true),
+		Credentials:      credentials.NewStaticCredentials(cfg.AccessKey, cfg.SecretKey, ""),
+		HTTPClient:       httpClient,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AWS session: %w", err)
+	}
+
+	return &R2StorageService{
+		s3Client:   s3.New(sess),
+		bucket:     cfg.Bucket,
+		multiCache: multiCache,
 	}, nil
 }
 
@@ -77,12 +122,32 @@ func (s *R2StorageService) GetImageWithTiming(imagePath string) (StorageResult, 
 	start := time.Now()
 	cacheKey := "raw_" + imagePath
 
-	if cached, found := s.cache.Get(cacheKey); found {
-		return StorageResult{
-			Data:        cached.([]byte),
-			NetworkTime: time.Since(start),
-			CacheHit:    true,
-		}, nil
+	if s.multiCache != nil {
+		ctx := context.Background()
+		cached, _, err := s.multiCache.Get(ctx, cacheKey)
+		if err == nil && cached != nil {
+			var imageData []byte
+			switch v := cached.(type) {
+			case []byte:
+				imageData = v
+			case cache.CachedImage:
+				imageData = v.Data
+			}
+
+			return StorageResult{
+				Data:        imageData,
+				NetworkTime: time.Since(start),
+				CacheHit:    true,
+			}, nil
+		}
+	} else if s.cache != nil {
+		if cached, found := s.cache.Get(cacheKey); found {
+			return StorageResult{
+				Data:        cached.([]byte),
+				NetworkTime: time.Since(start),
+				CacheHit:    true,
+			}, nil
+		}
 	}
 
 	networkStart := time.Now()
@@ -102,7 +167,12 @@ func (s *R2StorageService) GetImageWithTiming(imagePath string) (StorageResult, 
 		return StorageResult{}, fmt.Errorf("failed to read image data: %w", err)
 	}
 
-	s.cache.Set(cacheKey, imageData, 1*time.Hour)
+	if s.multiCache != nil {
+		ctx := context.Background()
+		s.multiCache.Set(ctx, cacheKey, imageData, 1*time.Hour)
+	} else if s.cache != nil {
+		s.cache.Set(cacheKey, imageData, 1*time.Hour)
+	}
 
 	return StorageResult{
 		Data:        imageData,

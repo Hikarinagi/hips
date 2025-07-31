@@ -24,12 +24,50 @@ func main() {
 
 	cacheService := cache.NewMemoryCache(cfg.Cache.TTL, cfg.Cache.Cleanup)
 
-	storageService, err := service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
-	if err != nil {
-		log.Fatal("Failed to create storage service:", err)
-	}
+	var storageService service.StorageService
+	var imageService service.ImageService
 
-	imageService := service.NewImageService(storageService, cacheService, cfg.Concurrent)
+	if cfg.MultiCache.L1Enabled || cfg.MultiCache.L2Enabled || cfg.MultiCache.L3Enabled {
+		cacheConfig := &cache.MultiCacheConfig{
+			L1Enabled:        cfg.MultiCache.L1Enabled,
+			L2Enabled:        cfg.MultiCache.L2Enabled,
+			L3Enabled:        cfg.MultiCache.L3Enabled,
+			L1MaxMemoryMB:    cfg.MultiCache.L1MaxMemoryMB,
+			L2MaxMemoryMB:    cfg.MultiCache.L2MaxMemoryMB,
+			L3MaxDiskGB:      cfg.MultiCache.L3MaxDiskGB,
+			RedisAddr:        cfg.MultiCache.RedisAddr,
+			RedisPassword:    cfg.MultiCache.RedisPassword,
+			RedisDB:          cfg.MultiCache.RedisDB,
+			DiskCacheDir:     cfg.MultiCache.DiskCacheDir,
+			PromoteThreshold: cfg.MultiCache.PromoteThreshold,
+			DemoteThreshold:  cfg.MultiCache.DemoteThreshold,
+			SyncInterval:     cfg.MultiCache.SyncInterval,
+		}
+		multiCache, err := cache.NewMultiLevelCache(cacheConfig)
+		if err != nil {
+			log.Printf("Failed to create multi-level cache, falling back to simple cache: %v", err)
+			storageService, err = service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
+			if err != nil {
+				log.Fatal("Failed to create storage service:", err)
+			}
+			imageService = service.NewImageService(storageService, cacheService, cfg.Concurrent)
+		} else {
+			storageService, err = service.NewR2StorageServiceWithMultiCache(&cfg.R2, &cfg.Network, multiCache)
+			if err != nil {
+				log.Fatal("Failed to create storage service with multi-cache:", err)
+			}
+			imageService = service.NewImageServiceWithMultiCache(storageService, multiCache, cfg.Concurrent)
+			log.Printf("Multi-level cache enabled - L1: %v, L2: %v, L3: %v",
+				cfg.MultiCache.L1Enabled, cfg.MultiCache.L2Enabled, cfg.MultiCache.L3Enabled)
+		}
+	} else {
+		storageService, err = service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
+		if err != nil {
+			log.Fatal("Failed to create storage service:", err)
+		}
+		imageService = service.NewImageService(storageService, cacheService, cfg.Concurrent)
+		log.Println("Using traditional single-level cache")
+	}
 
 	healthHandler := handler.NewHealthHandler(cacheService)
 	healthHandler.SetImageService(imageService)

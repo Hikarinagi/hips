@@ -16,7 +16,6 @@ type ProcessResult struct {
 	ResizeSkipped bool          `json:"resize_skipped"`
 }
 
-// ProcessImage 处理图片
 func ProcessImage(imageData []byte, params ImageParams) ([]byte, string, error) {
 	image, err := vips.NewImageFromBuffer(imageData)
 	if err != nil {
@@ -141,7 +140,6 @@ func ProcessImage(imageData []byte, params ImageParams) ([]byte, string, error) 
 	return outputData, contentType, nil
 }
 
-// ProcessImageWithTiming 处理图片并返回详细时间信息
 func ProcessImageWithTiming(imageData []byte, params ImageParams) (ProcessResult, error) {
 	start := time.Now()
 
@@ -165,7 +163,6 @@ func ProcessImageWithTiming(imageData []byte, params ImageParams) (ProcessResult
 		params.Crop,
 	)
 
-	// 判断是否需要resize处理
 	shouldResize := true
 
 	// 如果只指定了宽度

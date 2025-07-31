@@ -12,6 +12,7 @@ type Config struct {
 	Server     ServerConfig
 	R2         R2Config
 	Cache      CacheConfig
+	MultiCache MultiCacheConfig
 	Concurrent ConcurrentConfig
 	Network    NetworkConfig
 }
@@ -30,6 +31,31 @@ type R2Config struct {
 type CacheConfig struct {
 	TTL     time.Duration
 	Cleanup time.Duration
+}
+
+type MultiCacheConfig struct {
+	// 启用配置
+	L1Enabled bool `json:"l1_enabled"`
+	L2Enabled bool `json:"l2_enabled"`
+	L3Enabled bool `json:"l3_enabled"`
+
+	// 容量配置
+	L1MaxMemoryMB int64 `json:"l1_max_memory_mb"` // L1最大内存(MB)
+	L2MaxMemoryMB int64 `json:"l2_max_memory_mb"` // L2最大内存(MB)
+	L3MaxDiskGB   int64 `json:"l3_max_disk_gb"`   // L3最大磁盘空间(GB)
+
+	// Redis配置
+	RedisAddr     string `json:"redis_addr"`
+	RedisPassword string `json:"redis_password"`
+	RedisDB       int    `json:"redis_db"`
+
+	// 磁盘缓存配置
+	DiskCacheDir string `json:"disk_cache_dir"`
+
+	// 智能缓存配置
+	PromoteThreshold int64         `json:"promote_threshold"` // 提升阈值
+	DemoteThreshold  int64         `json:"demote_threshold"`  // 降级阈值
+	SyncInterval     time.Duration `json:"sync_interval"`     // 同步间隔
 }
 
 type ConcurrentConfig struct {
@@ -68,6 +94,14 @@ const (
 	DefaultKeepAlive           = 30 * time.Second
 	DefaultIdleConnTimeout     = 90 * time.Second
 	DefaultRequestTimeout      = 60 * time.Second
+
+	// 多层缓存默认值
+	DefaultL1MaxMemoryMB    = 1024 // 1GB
+	DefaultL2MaxMemoryMB    = 3072 // 3GB
+	DefaultL3MaxDiskGB      = 10   // 10GB
+	DefaultPromoteThreshold = 3    // 访问3次后提升
+	DefaultDemoteThreshold  = 1    // 访问1次后可降级
+	DefaultSyncInterval     = 5 * time.Minute
 )
 
 func Load() (*Config, error) {
@@ -78,6 +112,21 @@ func Load() (*Config, error) {
 		Cache: CacheConfig{
 			TTL:     CacheTTL,
 			Cleanup: CacheCleanup,
+		},
+		MultiCache: MultiCacheConfig{
+			L1Enabled:        getEnvBoolWithDefault("CACHE_L1_ENABLED", true),
+			L2Enabled:        getEnvBoolWithDefault("CACHE_L2_ENABLED", true),
+			L3Enabled:        getEnvBoolWithDefault("CACHE_L3_ENABLED", true),
+			L1MaxMemoryMB:    getEnvInt64WithDefault("CACHE_L1_MAX_MEMORY_MB", DefaultL1MaxMemoryMB),
+			L2MaxMemoryMB:    getEnvInt64WithDefault("CACHE_L2_MAX_MEMORY_MB", DefaultL2MaxMemoryMB),
+			L3MaxDiskGB:      getEnvInt64WithDefault("CACHE_L3_MAX_DISK_GB", DefaultL3MaxDiskGB),
+			RedisAddr:        getEnvWithDefault("REDIS_ADDR", "localhost:6379"),
+			RedisPassword:    os.Getenv("REDIS_PASSWORD"),
+			RedisDB:          getEnvIntWithDefault("REDIS_DB", 0),
+			DiskCacheDir:     getEnvWithDefault("CACHE_DISK_DIR", "./cache"),
+			PromoteThreshold: getEnvInt64WithDefault("CACHE_PROMOTE_THRESHOLD", DefaultPromoteThreshold),
+			DemoteThreshold:  getEnvInt64WithDefault("CACHE_DEMOTE_THRESHOLD", DefaultDemoteThreshold),
+			SyncInterval:     getEnvDurationWithDefault("CACHE_SYNC_INTERVAL", DefaultSyncInterval),
 		},
 		Concurrent: ConcurrentConfig{
 			MaxWorkers:   getEnvIntWithDefault("MAX_WORKERS", DefaultMaxWorkers),
@@ -159,6 +208,15 @@ func getEnvDurationWithDefault(key string, defaultValue time.Duration) time.Dura
 	if value := os.Getenv(key); value != "" {
 		if duration, err := time.ParseDuration(value); err == nil {
 			return duration
+		}
+	}
+	return defaultValue
+}
+
+func getEnvInt64WithDefault(key string, defaultValue int64) int64 {
+	if value := os.Getenv(key); value != "" {
+		if int64Value, err := strconv.ParseInt(value, 10, 64); err == nil {
+			return int64Value
 		}
 	}
 	return defaultValue

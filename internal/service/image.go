@@ -14,7 +14,8 @@ import (
 
 type ImageServiceImpl struct {
 	storageService StorageService
-	cache          cache.CacheService
+	cache          cache.CacheService        // 保持向后兼容
+	multiCache     cache.LayeredCacheService // 新的多层缓存
 	processor      *concurrent.ConcurrentImageProcessor
 	monitor        *concurrent.ResourceMonitor
 	enableAsync    bool
@@ -49,6 +50,34 @@ func NewImageService(storageService StorageService, cacheService cache.CacheServ
 	}
 }
 
+func NewImageServiceWithMultiCache(storageService StorageService, multiCache cache.LayeredCacheService, concurrentConfig config.ConcurrentConfig) *ImageServiceImpl {
+	processorConfig := concurrent.ProcessorConfig{
+		MaxWorkers:   concurrentConfig.MaxWorkers,
+		MaxQueueSize: concurrentConfig.MaxQueueSize,
+		BufferSize:   concurrentConfig.BufferSize,
+	}
+
+	processor := concurrent.NewConcurrentImageProcessor(processorConfig)
+
+	monitorConfig := concurrent.MonitorConfig{
+		MonitorInterval:  30 * time.Second,
+		AutoTuneInterval: 5 * time.Minute,
+		TargetCPUUsage:   0.8,
+		TargetQueueSize:  0.7,
+		EnableAutoTuning: true,
+	}
+	monitor := concurrent.NewResourceMonitor(processor, monitorConfig)
+
+	return &ImageServiceImpl{
+		storageService: storageService,
+		multiCache:     multiCache,
+		processor:      processor,
+		monitor:        monitor,
+		enableAsync:    concurrentConfig.EnableAsync,
+		taskTimeout:    concurrentConfig.TaskTimeout,
+	}
+}
+
 func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.ImageParams) ([]byte, string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.taskTimeout)
 	defer cancel()
@@ -58,22 +87,53 @@ func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.
 
 func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, params imaging.ImageParams) (ProcessResult, error) {
 	totalStart := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), s.taskTimeout)
+	defer cancel()
 
 	cacheKey := imaging.GenerateCacheKey(imagePath, params)
 
-	if cached, found := s.cache.Get(cacheKey); found {
-		cachedImage := cached.(cache.CachedImage)
-		return ProcessResult{
-			Data:        cachedImage.Data,
-			ContentType: cachedImage.ContentType,
-			Timings: ProcessTimings{
-				NetworkTime:    0,
-				ProcessingTime: 0,
-				TotalTime:      time.Since(totalStart),
-				CacheHit:       true,
-				ResizeSkipped:  false,
-			},
-		}, nil
+	if s.multiCache != nil {
+		cached, cacheInfo, err := s.multiCache.Get(ctx, cacheKey)
+		if err == nil && cached != nil {
+			var cachedImage cache.CachedImage
+			switch v := cached.(type) {
+			case cache.CachedImage:
+				cachedImage = v
+			case []byte:
+				cachedImage = cache.CachedImage{
+					Data:        v,
+					ContentType: "image/jpeg", // 默认类型
+				}
+			}
+
+			return ProcessResult{
+				Data:        cachedImage.Data,
+				ContentType: cachedImage.ContentType,
+				CacheInfo:   cacheInfo,
+				Timings: ProcessTimings{
+					NetworkTime:    0,
+					ProcessingTime: 0,
+					TotalTime:      time.Since(totalStart),
+					CacheHit:       true,
+					ResizeSkipped:  false,
+				},
+			}, nil
+		}
+	} else if s.cache != nil {
+		if cached, found := s.cache.Get(cacheKey); found {
+			cachedImage := cached.(cache.CachedImage)
+			return ProcessResult{
+				Data:        cachedImage.Data,
+				ContentType: cachedImage.ContentType,
+				Timings: ProcessTimings{
+					NetworkTime:    0,
+					ProcessingTime: 0,
+					TotalTime:      time.Since(totalStart),
+					CacheHit:       true,
+					ResizeSkipped:  false,
+				},
+			}, nil
+		}
 	}
 
 	storageResult, err := s.storageService.GetImageWithTiming(imagePath)
@@ -89,8 +149,17 @@ func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, param
 	cachedImage := cache.CachedImage{
 		Data:        processResult.Data,
 		ContentType: processResult.ContentType,
+		Size:        int64(len(processResult.Data)),
+		AccessCount: 1,
+		CreatedAt:   time.Now(),
+		LastAccess:  time.Now(),
 	}
-	s.cache.Set(cacheKey, cachedImage, config.CacheTTL)
+
+	if s.multiCache != nil {
+		s.multiCache.Set(ctx, cacheKey, cachedImage, config.CacheTTL)
+	} else if s.cache != nil {
+		s.cache.Set(cacheKey, cachedImage, config.CacheTTL)
+	}
 
 	if s.monitor != nil {
 		s.monitor.RecordProcessing(processResult.ProcessTime, true)
@@ -105,6 +174,10 @@ func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, param
 			TotalTime:      time.Since(totalStart),
 			CacheHit:       storageResult.CacheHit,
 			ResizeSkipped:  processResult.ResizeSkipped,
+		},
+		CacheInfo: &cache.CacheHitInfo{
+			Level: cache.L4CDN, // 表示从源获取
+			Hit:   false,
 		},
 	}, nil
 }
@@ -213,6 +286,13 @@ func (s *ImageServiceImpl) AdjustWorkers(newWorkerCount int) error {
 		return nil
 	}
 	return concurrent.ErrWorkerPoolClosed
+}
+
+func (s *ImageServiceImpl) GetMultiCacheStats() map[cache.CacheLevel]cache.CacheStats {
+	if s.multiCache != nil {
+		return s.multiCache.GetStats()
+	}
+	return make(map[cache.CacheLevel]cache.CacheStats)
 }
 
 type BatchProcessRequest struct {

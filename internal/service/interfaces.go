@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"hips/internal/cache"
 	"hips/pkg/concurrent"
 	"hips/pkg/imaging"
 )
@@ -19,9 +20,10 @@ type ProcessTimings struct {
 
 // ProcessResult 包含处理结果和详细时间信息
 type ProcessResult struct {
-	Data        []byte         `json:"-"`
-	ContentType string         `json:"content_type"`
-	Timings     ProcessTimings `json:"timings"`
+	Data        []byte              `json:"-"`
+	ContentType string              `json:"content_type"`
+	Timings     ProcessTimings      `json:"timings"`
+	CacheInfo   *cache.CacheHitInfo `json:"cache_info,omitempty"` // 多层缓存命中信息
 }
 
 // StorageResult 包含存储获取结果和网络耗时

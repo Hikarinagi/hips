@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -61,10 +62,23 @@ func (h *ImageHandler) HandleImageProxy(c *gin.Context) {
 	c.Header("X-Network-Time", result.Timings.NetworkTime.String())
 	c.Header("X-Processing-Time", result.Timings.ProcessingTime.String())
 
-	if result.Timings.CacheHit {
-		c.Header("X-Cache", "HIT")
+	if result.CacheInfo != nil {
+		c.Header("X-Cache-Level", result.CacheInfo.Level.String())
+		if result.CacheInfo.Hit {
+			c.Header("X-Cache", "HIT")
+			c.Header("X-Cache-Retrieve-Time", result.CacheInfo.RetrieveTime.String())
+			if result.CacheInfo.Size > 0 {
+				c.Header("X-Cache-Size", fmt.Sprintf("%d", result.CacheInfo.Size))
+			}
+		} else {
+			c.Header("X-Cache", "MISS")
+		}
 	} else {
-		c.Header("X-Cache", "MISS")
+		if result.Timings.CacheHit {
+			c.Header("X-Cache", "HIT")
+		} else {
+			c.Header("X-Cache", "MISS")
+		}
 	}
 
 	if result.Timings.ResizeSkipped {

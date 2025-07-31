@@ -29,6 +29,10 @@ func (m *MemoryCache) ItemCount() int {
 }
 
 type CachedImage struct {
-	Data        []byte
-	ContentType string
+	Data        []byte    `json:"-"`
+	ContentType string    `json:"content_type"`
+	Size        int64     `json:"size"`
+	AccessCount int64     `json:"access_count"`
+	CreatedAt   time.Time `json:"created_at"`
+	LastAccess  time.Time `json:"last_access"`
 }
