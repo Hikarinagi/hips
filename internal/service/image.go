@@ -56,6 +56,59 @@ func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.
 	return s.ProcessImageRequestWithContext(ctx, imagePath, params)
 }
 
+func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, params imaging.ImageParams) (ProcessResult, error) {
+	totalStart := time.Now()
+
+	cacheKey := imaging.GenerateCacheKey(imagePath, params)
+
+	if cached, found := s.cache.Get(cacheKey); found {
+		cachedImage := cached.(cache.CachedImage)
+		return ProcessResult{
+			Data:        cachedImage.Data,
+			ContentType: cachedImage.ContentType,
+			Timings: ProcessTimings{
+				NetworkTime:    0,
+				ProcessingTime: 0,
+				TotalTime:      time.Since(totalStart),
+				CacheHit:       true,
+				ResizeSkipped:  false,
+			},
+		}, nil
+	}
+
+	storageResult, err := s.storageService.GetImageWithTiming(imagePath)
+	if err != nil {
+		return ProcessResult{}, err
+	}
+
+	processResult, err := imaging.ProcessImageWithTiming(storageResult.Data, params)
+	if err != nil {
+		return ProcessResult{}, err
+	}
+
+	cachedImage := cache.CachedImage{
+		Data:        processResult.Data,
+		ContentType: processResult.ContentType,
+	}
+	s.cache.Set(cacheKey, cachedImage, config.CacheTTL)
+
+	if s.monitor != nil {
+		s.monitor.RecordProcessing(processResult.ProcessTime, true)
+	}
+
+	return ProcessResult{
+		Data:        processResult.Data,
+		ContentType: processResult.ContentType,
+		Timings: ProcessTimings{
+			NetworkTime:    storageResult.NetworkTime,
+			ProcessingTime: processResult.ProcessTime,
+			TotalTime:      time.Since(totalStart),
+			CacheHit:       storageResult.CacheHit,
+			ResizeSkipped:  processResult.ResizeSkipped,
+		},
+	}, nil
+}
+
 func (s *ImageServiceImpl) ProcessImageRequestWithContext(ctx context.Context, imagePath string, params imaging.ImageParams) ([]byte, string, error) {
 	cacheKey := imaging.GenerateCacheKey(imagePath, params)
 

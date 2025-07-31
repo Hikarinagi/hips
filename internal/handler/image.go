@@ -4,7 +4,6 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -36,8 +35,6 @@ func (h *ImageHandler) HandleRequest(c *gin.Context) {
 }
 
 func (h *ImageHandler) HandleImageProxy(c *gin.Context) {
-	start := time.Now()
-
 	imagePath := strings.TrimPrefix(c.Request.URL.Path, "/")
 	if imagePath == "" || imagePath == "health" {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "Ciallo～ (∠・ω< )⌒★"})
@@ -46,7 +43,7 @@ func (h *ImageHandler) HandleImageProxy(c *gin.Context) {
 
 	params := imaging.ParseImageParams(c.Request.URL.Query())
 
-	processedData, contentType, err := h.imageService.ProcessImageRequest(imagePath, params)
+	result, err := h.imageService.ProcessImageRequestWithTiming(imagePath, params)
 	if err != nil {
 		log.Printf("Error processing image: %v", err)
 
@@ -59,6 +56,22 @@ func (h *ImageHandler) HandleImageProxy(c *gin.Context) {
 	}
 
 	c.Header("Cache-Control", "public, max-age=31536000")
-	c.Header("X-Process-Time", time.Since(start).String())
-	c.Data(http.StatusOK, contentType, processedData)
+
+	c.Header("X-Total-Time", result.Timings.TotalTime.String())
+	c.Header("X-Network-Time", result.Timings.NetworkTime.String())
+	c.Header("X-Processing-Time", result.Timings.ProcessingTime.String())
+
+	if result.Timings.CacheHit {
+		c.Header("X-Cache", "HIT")
+	} else {
+		c.Header("X-Cache", "MISS")
+	}
+
+	if result.Timings.ResizeSkipped {
+		c.Header("X-Resize-Skipped", "true")
+	} else {
+		c.Header("X-Resize-Skipped", "false")
+	}
+
+	c.Data(http.StatusOK, result.ContentType, result.Data)
 }

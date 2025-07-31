@@ -23,7 +23,6 @@ type R2StorageService struct {
 }
 
 func NewR2StorageService(cfg *config.R2Config, networkCfg *config.NetworkConfig, cacheService cache.CacheService) (*R2StorageService, error) {
-	// 创建优化的HTTP客户端，支持连接池和长连接
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			// 连接池配置
@@ -67,26 +66,47 @@ func NewR2StorageService(cfg *config.R2Config, networkCfg *config.NetworkConfig,
 }
 
 func (s *R2StorageService) GetImage(imagePath string) ([]byte, error) {
+	result, err := s.GetImageWithTiming(imagePath)
+	if err != nil {
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+func (s *R2StorageService) GetImageWithTiming(imagePath string) (StorageResult, error) {
+	start := time.Now()
 	cacheKey := "raw_" + imagePath
+
 	if cached, found := s.cache.Get(cacheKey); found {
-		return cached.([]byte), nil
+		return StorageResult{
+			Data:        cached.([]byte),
+			NetworkTime: time.Since(start),
+			CacheHit:    true,
+		}, nil
 	}
 
+	networkStart := time.Now()
 	result, err := s.s3Client.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(imagePath),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image from R2: %w", err)
+		return StorageResult{}, fmt.Errorf("failed to get image from R2: %w", err)
 	}
 	defer result.Body.Close()
 
 	imageData, err := io.ReadAll(result.Body)
+	networkTime := time.Since(networkStart)
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to read image data: %w", err)
+		return StorageResult{}, fmt.Errorf("failed to read image data: %w", err)
 	}
 
 	s.cache.Set(cacheKey, imageData, 1*time.Hour)
 
-	return imageData, nil
+	return StorageResult{
+		Data:        imageData,
+		NetworkTime: networkTime,
+		CacheHit:    false,
+	}, nil
 }
