@@ -107,7 +107,7 @@ func processImageInternal(imageData []byte, params ImageParams) (ProcessResult, 
 		options.Height = targetHeight
 
 		switch params.Crop {
-		case CropFit:
+		case CropFit, "":
 			options.Force = false
 		case CropFill:
 			options.Crop = true

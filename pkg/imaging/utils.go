@@ -84,5 +84,26 @@ func CalculateTargetSize(origW, origH, targetW, targetH int, crop string) (int, 
 		return targetW, int(float64(origH) * ratio)
 	}
 
-	return targetW, targetH
+	switch crop {
+	case CropFill:
+		scaleX := float64(targetW) / float64(origW)
+		scaleY := float64(targetH) / float64(origH)
+		scale := scaleX
+		if scaleY > scaleX {
+			scale = scaleY
+		}
+		return int(float64(origW) * scale), int(float64(origH) * scale)
+
+	case CropCrop:
+		return targetW, targetH
+
+	default:
+		scaleX := float64(targetW) / float64(origW)
+		scaleY := float64(targetH) / float64(origH)
+		scale := scaleX
+		if scaleY < scaleX {
+			scale = scaleY
+		}
+		return int(float64(origW) * scale), int(float64(origH) * scale)
+	}
 }
