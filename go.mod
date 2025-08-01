@@ -8,6 +8,7 @@ require (
 	github.com/h2non/bimg v1.1.9
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/redis/go-redis/v9 v9.0.5
+	go.etcd.io/bbolt v1.3.8
 )
 
 require (

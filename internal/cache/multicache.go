@@ -11,9 +11,9 @@ import (
 // MultiLevelCache 多层缓存管理器
 type MultiLevelCache struct {
 	// 缓存层级
-	l1Memory CacheAdapter // L1: 内存缓存
-	l2Redis  CacheAdapter // L2: Redis缓存
-	l3Disk   CacheAdapter // L3: 磁盘缓存
+	l1Memory CacheAdapter
+	l2Redis  CacheAdapter
+	l3Disk   CacheAdapter
 
 	// 缓存策略
 	strategy CacheStrategy
@@ -28,23 +28,24 @@ type MultiLevelCache struct {
 
 // MultiCacheConfig 多层缓存配置
 type MultiCacheConfig struct {
-	L1MaxMemoryMB int64 `json:"l1_max_memory_mb"` // L1最大内存(MB)
-	L2MaxMemoryMB int64 `json:"l2_max_memory_mb"` // L2最大内存(MB)
-	L3MaxDiskGB   int64 `json:"l3_max_disk_gb"`   // L3最大磁盘空间(GB)
+	L1MaxMemoryMB int64 `json:"l1_max_memory_mb"`
+	L2MaxMemoryMB int64 `json:"l2_max_memory_mb"`
+	L3MaxDiskGB   int64 `json:"l3_max_disk_gb"`
 
-	L1Enabled bool `json:"l1_enabled"` // 是否启用L1
-	L2Enabled bool `json:"l2_enabled"` // 是否启用L2
-	L3Enabled bool `json:"l3_enabled"` // 是否启用L3
+	L1Enabled bool `json:"l1_enabled"`
+	L2Enabled bool `json:"l2_enabled"`
+	L3Enabled bool `json:"l3_enabled"`
 
-	RedisAddr     string `json:"redis_addr"`     // Redis地址
-	RedisPassword string `json:"redis_password"` // Redis密码
-	RedisDB       int    `json:"redis_db"`       // Redis数据库
+	RedisAddr     string `json:"redis_addr"`
+	RedisPassword string `json:"redis_password"`
+	RedisDB       int    `json:"redis_db"`
 
-	DiskCacheDir string `json:"disk_cache_dir"` // 磁盘缓存目录
+	DiskCacheDir   string `json:"disk_cache_dir"`
+	L3UseOptimized bool   `json:"l3_use_optimized"` // 是否使用优化的BoltDB索引
 
-	PromoteThreshold int64         `json:"promote_threshold"` // 提升阈值
-	DemoteThreshold  int64         `json:"demote_threshold"`  // 降级阈值
-	SyncInterval     time.Duration `json:"sync_interval"`     // 同步间隔
+	PromoteThreshold int64         `json:"promote_threshold"`
+	DemoteThreshold  int64         `json:"demote_threshold"`
+	SyncInterval     time.Duration `json:"sync_interval"`
 }
 
 // LevelStats 层级统计
@@ -87,10 +88,25 @@ func NewMultiLevelCache(config *MultiCacheConfig) (*MultiLevelCache, error) {
 
 	// 初始化L3磁盘缓存
 	if config.L3Enabled {
-		l3Cache, err := NewL3DiskAdapter(config.DiskCacheDir, config.L3MaxDiskGB)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create L3 disk cache: %w", err)
+		var l3Cache CacheAdapter
+		var err error
+
+		if config.L3UseOptimized {
+			// 使用优化的BoltDB索引实现
+			l3Cache, err = NewL3DiskAdapterOptimized(config.DiskCacheDir, config.L3MaxDiskGB)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create optimized L3 disk cache: %w", err)
+			}
+			log.Printf("L3 disk cache initialized with BoltDB optimization (max: %dGB)", config.L3MaxDiskGB)
+		} else {
+			// 使用原始的JSON索引实现（向后兼容）
+			l3Cache, err = NewL3DiskAdapter(config.DiskCacheDir, config.L3MaxDiskGB)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create L3 disk cache: %w", err)
+			}
+			log.Printf("L3 disk cache initialized with JSON index (max: %dGB)", config.L3MaxDiskGB)
 		}
+
 		cache.l3Disk = l3Cache
 	}
 

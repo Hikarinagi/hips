@@ -13,18 +13,15 @@ import (
 // L2RedisAdapter L2 Redis缓存适配器
 type L2RedisAdapter struct {
 	client    *redis.Client
-	maxMemory int64 // 最大内存限制(字节)
+	maxMemory int64
 
-	// 统计信息
 	hitCount      int64
 	missCount     int64
 	evictionCount int64
 
-	// 配置
 	keyPrefix string
 }
 
-// RedisCacheItem Redis缓存项
 type RedisCacheItem struct {
 	Data        []byte    `json:"data"`
 	ContentType string    `json:"content_type"`
@@ -34,7 +31,6 @@ type RedisCacheItem struct {
 	AccessCount int64     `json:"access_count"`
 }
 
-// NewL2RedisAdapter 创建L2 Redis缓存适配器
 func NewL2RedisAdapter(addr, password string, db int, maxMemoryMB int64) (*L2RedisAdapter, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:         addr,
@@ -72,7 +68,6 @@ func NewL2RedisAdapter(addr, password string, db int, maxMemoryMB int64) (*L2Red
 func (r *L2RedisAdapter) Get(ctx context.Context, key string) (interface{}, error) {
 	redisKey := r.keyPrefix + key
 
-	// 获取数据
 	data, err := r.client.Get(ctx, redisKey).Bytes()
 	if err != nil {
 		if err == redis.Nil {
@@ -82,13 +77,11 @@ func (r *L2RedisAdapter) Get(ctx context.Context, key string) (interface{}, erro
 		return nil, fmt.Errorf("failed to get from Redis: %w", err)
 	}
 
-	// 反序列化
 	var item RedisCacheItem
 	if err := json.Unmarshal(data, &item); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal cache item: %w", err)
 	}
 
-	// 更新访问信息
 	now := time.Now()
 	item.LastAccess = now
 	item.AccessCount++
@@ -98,7 +91,6 @@ func (r *L2RedisAdapter) Get(ctx context.Context, key string) (interface{}, erro
 
 	atomic.AddInt64(&r.hitCount, 1)
 
-	// 返回CachedImage
 	cachedImage := CachedImage{
 		Data:        item.Data,
 		ContentType: item.ContentType,
@@ -130,12 +122,11 @@ func (r *L2RedisAdapter) Set(ctx context.Context, key string, value interface{},
 		return fmt.Errorf("unsupported value type for Redis cache")
 	}
 
-	// 检查大小限制 (单个项目不能超过最大内存的10%)
+	// 单个项目不能超过最大内存的10%
 	if size > r.maxMemory/10 {
 		return fmt.Errorf("item too large for L2 cache: %d bytes", size)
 	}
 
-	// 创建缓存项
 	now := time.Now()
 	item := RedisCacheItem{
 		Data:        data,
@@ -146,7 +137,6 @@ func (r *L2RedisAdapter) Set(ctx context.Context, key string, value interface{},
 		AccessCount: 1,
 	}
 
-	// 序列化
 	itemData, err := json.Marshal(item)
 	if err != nil {
 		return fmt.Errorf("failed to marshal cache item: %w", err)
@@ -154,9 +144,8 @@ func (r *L2RedisAdapter) Set(ctx context.Context, key string, value interface{},
 
 	redisKey := r.keyPrefix + key
 
-	// 设置到Redis，使用过期时间
 	if duration <= 0 {
-		duration = 24 * time.Hour // 默认24小时
+		duration = 24 * time.Hour
 	}
 
 	if err := r.client.Set(ctx, redisKey, itemData, duration).Err(); err != nil {
@@ -180,7 +169,6 @@ func (r *L2RedisAdapter) Delete(ctx context.Context, key string) error {
 
 // Clear 清空缓存
 func (r *L2RedisAdapter) Clear(ctx context.Context) error {
-	// 使用SCAN命令找到所有匹配的key
 	pattern := r.keyPrefix + "*"
 
 	iter := r.client.Scan(ctx, 0, pattern, 0).Iterator()
@@ -194,7 +182,6 @@ func (r *L2RedisAdapter) Clear(ctx context.Context) error {
 		return fmt.Errorf("failed to scan Redis keys: %w", err)
 	}
 
-	// 批量删除
 	if len(keys) > 0 {
 		if err := r.client.Del(ctx, keys...).Err(); err != nil {
 			return fmt.Errorf("failed to delete Redis keys: %w", err)
@@ -209,16 +196,12 @@ func (r *L2RedisAdapter) Stats() CacheStats {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 获取Redis内存使用情况
 	var usedMemory int64
 	if memInfo, err := r.client.Info(ctx, "memory").Result(); err == nil {
-		// 这里应该解析memInfo中的used_memory_dataset
-		// 为简化，使用一个粗略值
 		_ = memInfo
-		usedMemory = r.maxMemory / 4 // 粗略估算
+		usedMemory = r.maxMemory / 4
 	}
 
-	// 计算命中率
 	hitCount := atomic.LoadInt64(&r.hitCount)
 	missCount := atomic.LoadInt64(&r.missCount)
 	total := hitCount + missCount
@@ -228,7 +211,6 @@ func (r *L2RedisAdapter) Stats() CacheStats {
 		hitRatio = float64(hitCount) / float64(total)
 	}
 
-	// 获取key数量
 	var items int64
 	if result, err := r.client.DBSize(ctx).Result(); err == nil {
 		items = result
@@ -244,14 +226,12 @@ func (r *L2RedisAdapter) Stats() CacheStats {
 	}
 }
 
-// Close 关闭Redis连接
 func (r *L2RedisAdapter) Close() error {
 	return r.client.Close()
 }
 
 // updateAccessInfo 异步更新访问信息
 func (r *L2RedisAdapter) updateAccessInfo(ctx context.Context, redisKey string, item *RedisCacheItem) {
-	// 序列化更新的项
 	itemData, err := json.Marshal(item)
 	if err != nil {
 		return

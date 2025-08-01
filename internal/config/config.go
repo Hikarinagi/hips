@@ -40,9 +40,9 @@ type MultiCacheConfig struct {
 	L3Enabled bool `json:"l3_enabled"`
 
 	// 容量配置
-	L1MaxMemoryMB int64 `json:"l1_max_memory_mb"` // L1最大内存(MB)
-	L2MaxMemoryMB int64 `json:"l2_max_memory_mb"` // L2最大内存(MB)
-	L3MaxDiskGB   int64 `json:"l3_max_disk_gb"`   // L3最大磁盘空间(GB)
+	L1MaxMemoryMB int64 `json:"l1_max_memory_mb"`
+	L2MaxMemoryMB int64 `json:"l2_max_memory_mb"`
+	L3MaxDiskGB   int64 `json:"l3_max_disk_gb"`
 
 	// Redis配置
 	RedisAddr     string `json:"redis_addr"`
@@ -50,12 +50,13 @@ type MultiCacheConfig struct {
 	RedisDB       int    `json:"redis_db"`
 
 	// 磁盘缓存配置
-	DiskCacheDir string `json:"disk_cache_dir"`
+	DiskCacheDir   string `json:"disk_cache_dir"`
+	L3UseOptimized bool   `json:"l3_use_optimized"` // 是否使用优化的BoltDB索引
 
 	// 智能缓存配置
-	PromoteThreshold int64         `json:"promote_threshold"` // 提升阈值
-	DemoteThreshold  int64         `json:"demote_threshold"`  // 降级阈值
-	SyncInterval     time.Duration `json:"sync_interval"`     // 同步间隔
+	PromoteThreshold int64         `json:"promote_threshold"`
+	DemoteThreshold  int64         `json:"demote_threshold"`
+	SyncInterval     time.Duration `json:"sync_interval"`
 }
 
 type ConcurrentConfig struct {
@@ -96,11 +97,11 @@ const (
 	DefaultRequestTimeout      = 60 * time.Second
 
 	// 多层缓存默认值
-	DefaultL1MaxMemoryMB    = 1024 // 1GB
-	DefaultL2MaxMemoryMB    = 3072 // 3GB
-	DefaultL3MaxDiskGB      = 10   // 10GB
-	DefaultPromoteThreshold = 3    // 访问3次后提升
-	DefaultDemoteThreshold  = 1    // 访问1次后可降级
+	DefaultL1MaxMemoryMB    = 1024
+	DefaultL2MaxMemoryMB    = 3072
+	DefaultL3MaxDiskGB      = 10
+	DefaultPromoteThreshold = 3
+	DefaultDemoteThreshold  = 1
 	DefaultSyncInterval     = 5 * time.Minute
 )
 
@@ -124,6 +125,7 @@ func Load() (*Config, error) {
 			RedisPassword:    os.Getenv("REDIS_PASSWORD"),
 			RedisDB:          getEnvIntWithDefault("REDIS_DB", 0),
 			DiskCacheDir:     getEnvWithDefault("CACHE_DISK_DIR", "./cache"),
+			L3UseOptimized:   getEnvBoolWithDefault("CACHE_L3_USE_OPTIMIZED", true), // 默认启用优化
 			PromoteThreshold: getEnvInt64WithDefault("CACHE_PROMOTE_THRESHOLD", DefaultPromoteThreshold),
 			DemoteThreshold:  getEnvInt64WithDefault("CACHE_DEMOTE_THRESHOLD", DefaultDemoteThreshold),
 			SyncInterval:     getEnvDurationWithDefault("CACHE_SYNC_INTERVAL", DefaultSyncInterval),

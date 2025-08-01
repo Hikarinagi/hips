@@ -33,6 +33,7 @@ func main() {
 			RedisPassword:    cfg.MultiCache.RedisPassword,
 			RedisDB:          cfg.MultiCache.RedisDB,
 			DiskCacheDir:     cfg.MultiCache.DiskCacheDir,
+			L3UseOptimized:   cfg.MultiCache.L3UseOptimized,
 			PromoteThreshold: cfg.MultiCache.PromoteThreshold,
 			DemoteThreshold:  cfg.MultiCache.DemoteThreshold,
 			SyncInterval:     cfg.MultiCache.SyncInterval,

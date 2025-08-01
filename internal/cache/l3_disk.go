@@ -16,8 +16,8 @@ import (
 // L3DiskAdapter L3磁盘缓存适配器
 type L3DiskAdapter struct {
 	baseDir     string
-	maxSize     int64 // 最大磁盘空间（字节）
-	currentSize int64 // 当前使用空间
+	maxSize     int64
+	currentSize int64
 
 	// 元数据管理
 	metadata map[string]*DiskCacheMetadata
@@ -53,7 +53,7 @@ func NewL3DiskAdapter(baseDir string, maxSizeGB int64) (*L3DiskAdapter, error) {
 
 	adapter := &L3DiskAdapter{
 		baseDir:     baseDir,
-		maxSize:     maxSizeGB * 1024 * 1024 * 1024, // 转换为字节
+		maxSize:     maxSizeGB * 1024 * 1024 * 1024,
 		metadata:    make(map[string]*DiskCacheMetadata),
 		stopCleanup: make(chan struct{}),
 	}
@@ -131,7 +131,7 @@ func (d *L3DiskAdapter) Set(ctx context.Context, key string, value interface{}, 
 	case []byte:
 		data = v
 		contentType = "application/octet-stream"
-		isOriginal = strings.Contains(key, "raw_") // 原图缓存标识
+		isOriginal = strings.Contains(key, "raw_")
 	case CachedImage:
 		data = v.Data
 		contentType = v.ContentType
@@ -318,7 +318,7 @@ func (d *L3DiskAdapter) loadMetadata() error {
 
 	data, err := os.ReadFile(metaFile)
 	if os.IsNotExist(err) {
-		return nil // 文件不存在是正常的
+		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("failed to read metadata file: %w", err)
@@ -401,7 +401,7 @@ func (d *L3DiskAdapter) performCleanup() {
 	}
 
 	// 如果仍然超过限制，继续清理
-	for d.currentSize > d.maxSize*90/100 && len(d.metadata) > 0 { // 保持90%以下
+	for d.currentSize > d.maxSize*90/100 && len(d.metadata) > 0 {
 		d.evictOldest()
 	}
 }

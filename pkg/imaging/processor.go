@@ -77,7 +77,6 @@ func processImageInternal(imageData []byte, params ImageParams) (ProcessResult, 
 		}
 	}
 
-	// 构建 bimg 选项
 	options := bimg.Options{
 		Quality:       params.Quality,
 		StripMetadata: true,

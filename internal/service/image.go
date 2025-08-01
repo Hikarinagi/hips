@@ -14,8 +14,8 @@ import (
 
 type ImageServiceImpl struct {
 	storageService StorageService
-	cache          cache.CacheService        // 保持向后兼容
-	multiCache     cache.LayeredCacheService // 新的多层缓存
+	cache          cache.CacheService
+	multiCache     cache.LayeredCacheService
 	processor      *concurrent.ConcurrentImageProcessor
 	monitor        *concurrent.ResourceMonitor
 	enableAsync    bool
