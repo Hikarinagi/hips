@@ -1,6 +1,6 @@
 # hikarinagi image process service(HIPS)
 
-切图服务，libvips负责核心的图片处理，gin负责网络请求处理
+切图服务，[bimg](https://github.com/h2non/bimg)负责核心的图片处理，[gin](https://github.com/gin-gonic/gin)负责网络请求处理
 
 ## 快速开始
 
