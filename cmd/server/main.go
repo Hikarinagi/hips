@@ -3,18 +3,12 @@ package main
 import (
 	"log"
 
-	"github.com/davidbyttow/govips/v2/vips"
-
 	"hips/internal/cache"
 	"hips/internal/config"
 	"hips/internal/handler"
 	"hips/internal/server"
 	"hips/internal/service"
 )
-
-func init() {
-	vips.Startup(nil)
-}
 
 func main() {
 	cfg, err := config.Load()
@@ -86,14 +80,9 @@ func main() {
 		if err := imageService.Close(); err != nil {
 			log.Printf("Error closing image service: %v", err)
 		}
-		cleanup()
 	}()
 
 	if err := srv.Start(cfg.Server.Port); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
-}
-
-func cleanup() {
-	vips.Shutdown()
 }

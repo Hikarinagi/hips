@@ -2,13 +2,11 @@ package imaging
 
 import (
 	"fmt"
-	"math"
 	"time"
 
-	"github.com/davidbyttow/govips/v2/vips"
+	"github.com/h2non/bimg"
 )
 
-// ProcessResult 包含处理结果和时间信息
 type ProcessResult struct {
 	Data          []byte        `json:"-"`
 	ContentType   string        `json:"content_type"`
@@ -17,140 +15,32 @@ type ProcessResult struct {
 }
 
 func ProcessImage(imageData []byte, params ImageParams) ([]byte, string, error) {
-	image, err := vips.NewImageFromBuffer(imageData)
+	result, err := processImageInternal(imageData, params)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to load image: %w", err)
+		return nil, "", err
 	}
-	defer image.Close()
-
-	originalWidth := image.Width()
-	originalHeight := image.Height()
-
-	if params.Width == 0 && params.Height == 0 {
-		params.Width = originalWidth
-		params.Height = originalHeight
-	}
-
-	targetWidth, targetHeight := CalculateTargetSize(
-		originalWidth, originalHeight,
-		params.Width, params.Height,
-		params.Crop,
-	)
-
-	shouldResize := true
-
-	// 如果只指定了宽度
-	if params.Width > 0 && params.Height == 0 {
-		if params.Width >= originalWidth {
-			shouldResize = false
-		}
-	} else if params.Width == 0 && params.Height > 0 {
-		// 如果只指定了高度
-		if params.Height >= originalHeight {
-			shouldResize = false
-		}
-	} else if params.Width > 0 && params.Height > 0 {
-		// 如果同时指定了宽高，根据裁剪模式判断
-		switch params.Crop {
-		case CropFit:
-			// fit模式：只要任一维度大于等于原图，就不需要处理
-			if params.Width >= originalWidth || params.Height >= originalHeight {
-				shouldResize = false
-			}
-		case CropFill, CropCrop:
-			// fill/crop模式：两个维度都大于等于原图才跳过
-			if params.Width >= originalWidth && params.Height >= originalHeight {
-				shouldResize = false
-			}
-		}
-	}
-
-	if shouldResize {
-		switch params.Crop {
-		case CropFit:
-			scale := float64(targetWidth) / float64(originalWidth)
-			err = image.Resize(scale, vips.KernelLanczos3)
-		case CropFill:
-			scaleX := float64(targetWidth) / float64(originalWidth)
-			scaleY := float64(targetHeight) / float64(originalHeight)
-			scale := math.Max(scaleX, scaleY)
-
-			err = image.Resize(scale, vips.KernelLanczos3)
-			if err == nil {
-				currentWidth := image.Width()
-				currentHeight := image.Height()
-				left := (currentWidth - targetWidth) / 2
-				top := (currentHeight - targetHeight) / 2
-				err = image.ExtractArea(left, top, targetWidth, targetHeight)
-			}
-		case CropCrop:
-			err = image.SmartCrop(targetWidth, targetHeight, vips.InterestingAttention)
-		default:
-			scale := float64(targetWidth) / float64(originalWidth)
-			err = image.Resize(scale, vips.KernelLanczos3)
-		}
-
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to process image: %w", err)
-		}
-	}
-
-	if params.Blur > 0 {
-		err = image.GaussianBlur(params.Blur)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to blur image: %w", err)
-		}
-	}
-
-	var outputData []byte
-	var contentType string
-
-	switch params.Format {
-	case FormatWebP:
-		webpParams := vips.NewWebpExportParams()
-		webpParams.Quality = params.Quality
-		webpParams.StripMetadata = true
-		outputData, _, err = image.ExportWebp(webpParams)
-		contentType = "image/webp"
-	case FormatAVIF:
-		avifParams := vips.NewAvifExportParams()
-		avifParams.Quality = params.Quality
-		avifParams.StripMetadata = true
-		avifParams.Effort = 1
-		avifParams.Lossless = false
-		outputData, _, err = image.ExportAvif(avifParams)
-		contentType = "image/avif"
-	case FormatPNG:
-		pngParams := vips.NewPngExportParams()
-		pngParams.StripMetadata = true
-		outputData, _, err = image.ExportPng(pngParams)
-		contentType = "image/png"
-	default:
-		jpegParams := vips.NewJpegExportParams()
-		jpegParams.Quality = params.Quality
-		jpegParams.StripMetadata = true
-		outputData, _, err = image.ExportJpeg(jpegParams)
-		contentType = "image/jpeg"
-	}
-
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to export image: %w", err)
-	}
-
-	return outputData, contentType, nil
+	return result.Data, result.ContentType, nil
 }
 
 func ProcessImageWithTiming(imageData []byte, params ImageParams) (ProcessResult, error) {
 	start := time.Now()
-
-	image, err := vips.NewImageFromBuffer(imageData)
+	result, err := processImageInternal(imageData, params)
 	if err != nil {
-		return ProcessResult{}, fmt.Errorf("failed to load image: %w", err)
+		return ProcessResult{}, err
 	}
-	defer image.Close()
+	result.ProcessTime = time.Since(start)
+	return result, nil
+}
 
-	originalWidth := image.Width()
-	originalHeight := image.Height()
+// processImageInternal 图片处理核心
+func processImageInternal(imageData []byte, params ImageParams) (ProcessResult, error) {
+	size, err := bimg.Size(imageData)
+	if err != nil {
+		return ProcessResult{}, fmt.Errorf("failed to get image size: %w", err)
+	}
+
+	originalWidth := size.Width
+	originalHeight := size.Height
 
 	if params.Width == 0 && params.Height == 0 {
 		params.Width = originalWidth
@@ -165,108 +55,87 @@ func ProcessImageWithTiming(imageData []byte, params ImageParams) (ProcessResult
 
 	shouldResize := true
 
-	// 如果只指定了宽度
+	// 判断是否需要处理
 	if params.Width > 0 && params.Height == 0 {
 		if params.Width >= originalWidth {
 			shouldResize = false
 		}
 	} else if params.Width == 0 && params.Height > 0 {
-		// 如果只指定了高度
 		if params.Height >= originalHeight {
 			shouldResize = false
 		}
 	} else if params.Width > 0 && params.Height > 0 {
-		// 如果同时指定了宽高，根据裁剪模式判断
 		switch params.Crop {
 		case CropFit:
-			// fit模式：只要任一维度大于等于原图，就不需要处理
 			if params.Width >= originalWidth || params.Height >= originalHeight {
 				shouldResize = false
 			}
 		case CropFill, CropCrop:
-			// fill/crop模式：两个维度都大于等于原图才跳过
 			if params.Width >= originalWidth && params.Height >= originalHeight {
 				shouldResize = false
 			}
 		}
 	}
 
+	// 构建 bimg 选项
+	options := bimg.Options{
+		Quality:       params.Quality,
+		StripMetadata: true,
+	}
+
+	// 设置输出格式和性能优化
+	var contentType string
+	switch params.Format {
+	case FormatWebP:
+		options.Type = bimg.WEBP
+		contentType = "image/webp"
+		options.Speed = 6
+	case FormatAVIF:
+		options.Type = bimg.AVIF
+		contentType = "image/avif"
+		options.Speed = 7
+	case FormatPNG:
+		options.Type = bimg.PNG
+		contentType = "image/png"
+		options.Speed = 6
+	default:
+		options.Type = bimg.JPEG
+		contentType = "image/jpeg"
+	}
+
 	if shouldResize {
+		options.Width = targetWidth
+		options.Height = targetHeight
+
 		switch params.Crop {
 		case CropFit:
-			scale := float64(targetWidth) / float64(originalWidth)
-			err = image.Resize(scale, vips.KernelLanczos3)
+			options.Force = false
 		case CropFill:
-			scaleX := float64(targetWidth) / float64(originalWidth)
-			scaleY := float64(targetHeight) / float64(originalHeight)
-			scale := math.Max(scaleX, scaleY)
-
-			err = image.Resize(scale, vips.KernelLanczos3)
-			if err == nil {
-				currentWidth := image.Width()
-				currentHeight := image.Height()
-				left := (currentWidth - targetWidth) / 2
-				top := (currentHeight - targetHeight) / 2
-				err = image.ExtractArea(left, top, targetWidth, targetHeight)
-			}
+			options.Crop = true
+			options.Force = true
 		case CropCrop:
-			err = image.SmartCrop(targetWidth, targetHeight, vips.InterestingAttention)
+			options.Crop = true
+			options.Gravity = bimg.GravitySmart
+			options.Force = true
 		default:
-			scale := float64(targetWidth) / float64(originalWidth)
-			err = image.Resize(scale, vips.KernelLanczos3)
-		}
-
-		if err != nil {
-			return ProcessResult{}, fmt.Errorf("failed to process image: %w", err)
+			options.Force = false
 		}
 	}
 
 	if params.Blur > 0 {
-		err = image.GaussianBlur(params.Blur)
-		if err != nil {
-			return ProcessResult{}, fmt.Errorf("failed to blur image: %w", err)
+		options.GaussianBlur = bimg.GaussianBlur{
+			Sigma: params.Blur,
 		}
 	}
 
-	var outputData []byte
-	var contentType string
-
-	switch params.Format {
-	case FormatWebP:
-		webpParams := vips.NewWebpExportParams()
-		webpParams.Quality = params.Quality
-		webpParams.StripMetadata = true
-		outputData, _, err = image.ExportWebp(webpParams)
-		contentType = "image/webp"
-	case FormatAVIF:
-		avifParams := vips.NewAvifExportParams()
-		avifParams.Quality = params.Quality
-		avifParams.StripMetadata = true
-		avifParams.Effort = 1
-		avifParams.Lossless = false
-		outputData, _, err = image.ExportAvif(avifParams)
-		contentType = "image/avif"
-	case FormatPNG:
-		pngParams := vips.NewPngExportParams()
-		pngParams.StripMetadata = true
-		outputData, _, err = image.ExportPng(pngParams)
-		contentType = "image/png"
-	default:
-		jpegParams := vips.NewJpegExportParams()
-		jpegParams.Quality = params.Quality
-		jpegParams.StripMetadata = true
-		outputData, _, err = image.ExportJpeg(jpegParams)
-		contentType = "image/jpeg"
-	}
-
+	outputData, err := bimg.NewImage(imageData).Process(options)
 	if err != nil {
-		return ProcessResult{}, fmt.Errorf("failed to export image: %w", err)
+		return ProcessResult{}, fmt.Errorf("failed to process image: %w", err)
 	}
 
 	return ProcessResult{
 		Data:          outputData,
 		ContentType:   contentType,
-		ProcessTime:   time.Since(start),
 		ResizeSkipped: !shouldResize,
 	}, nil
 }
