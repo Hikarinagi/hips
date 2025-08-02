@@ -236,7 +236,6 @@ func (m *MultiLevelCache) Set(ctx context.Context, key string, value interface{}
 				m.mu.Unlock()
 
 				cacheSet = true
-				log.Printf("Cached key %s on level %s (size: %d bytes)", key, l.level.String(), size)
 			}
 		}
 	}

@@ -78,14 +78,7 @@ func NewImageServiceWithMultiCache(storageService StorageService, multiCache cac
 	}
 }
 
-func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.ImageParams) ([]byte, string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.taskTimeout)
-	defer cancel()
-
-	return s.ProcessImageRequestWithContext(ctx, imagePath, params)
-}
-
-func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, params imaging.ImageParams) (ProcessResult, error) {
+func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.ImageParams) (ProcessResult, error) {
 	totalStart := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), s.taskTimeout)
 	defer cancel()
@@ -144,15 +137,9 @@ func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, param
 	var processResult imaging.ProcessResult
 	if s.enableAsync && s.processor != nil {
 		// 异步处理
-		concurrentResult, err := s.processor.ProcessAsync(ctx, storageResult.Data, params)
+		processResult, err = s.processor.ProcessAsync(ctx, storageResult.Data, params)
 		if err != nil {
 			return ProcessResult{}, err
-		}
-		processResult = imaging.ProcessResult{
-			Data:          concurrentResult.Data,
-			ContentType:   concurrentResult.ContentType,
-			ProcessTime:   concurrentResult.ProcessTime,
-			ResizeSkipped: false, // 并发处理器没有这个字段
 		}
 	} else {
 		// 同步处理（降级）
@@ -172,7 +159,9 @@ func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, param
 	}
 
 	if s.multiCache != nil {
-		s.multiCache.Set(ctx, cacheKey, cachedImage, config.CacheTTL)
+		if err := s.multiCache.Set(ctx, cacheKey, cachedImage, config.CacheTTL); err != nil {
+			log.Printf("Failed to set cache: %v", err)
+		}
 	} else if s.cache != nil {
 		s.cache.Set(cacheKey, cachedImage, config.CacheTTL)
 	}
@@ -196,65 +185,6 @@ func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, param
 			Hit:   false,
 		},
 	}, nil
-}
-
-func (s *ImageServiceImpl) ProcessImageRequestWithContext(ctx context.Context, imagePath string, params imaging.ImageParams) ([]byte, string, error) {
-	cacheKey := imaging.GenerateCacheKey(imagePath, params)
-
-	if cached, found := s.cache.Get(cacheKey); found {
-		cachedImage := cached.(cache.CachedImage)
-		return cachedImage.Data, cachedImage.ContentType, nil
-	}
-
-	imageData, err := s.storageService.GetImage(imagePath)
-	if err != nil {
-		return nil, "", err
-	}
-
-	var processedData []byte
-	var contentType string
-
-	if s.enableAsync && s.processor != nil {
-		result, err := s.processor.ProcessAsync(ctx, imageData, params)
-		if err != nil {
-			log.Printf("Async processing failed, falling back to sync: %v", err)
-			processedData, contentType, err = imaging.ProcessImage(imageData, params)
-			if err != nil {
-				return nil, "", err
-			}
-		} else {
-			processedData = result.Data
-			contentType = result.ContentType
-
-			if s.monitor != nil {
-				s.monitor.RecordProcessing(result.ProcessTime, true)
-			}
-			log.Printf("Image processed in %v (async)", result.ProcessTime)
-		}
-	} else {
-		start := time.Now()
-		processedData, contentType, err = imaging.ProcessImage(imageData, params)
-		processTime := time.Since(start)
-		if err != nil {
-			if s.monitor != nil {
-				s.monitor.RecordProcessing(processTime, false)
-			}
-			return nil, "", err
-		}
-
-		if s.monitor != nil {
-			s.monitor.RecordProcessing(processTime, true)
-		}
-		log.Printf("Image processed in %v (sync)", processTime)
-	}
-
-	cachedImage := cache.CachedImage{
-		Data:        processedData,
-		ContentType: contentType,
-	}
-	s.cache.Set(cacheKey, cachedImage, config.CacheTTL)
-
-	return processedData, contentType, nil
 }
 
 func (s *ImageServiceImpl) Close() error {

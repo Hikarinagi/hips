@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"hips/pkg/imaging"
 )
@@ -18,11 +17,8 @@ type ProcessTask struct {
 	Context    context.Context
 }
 
-type ProcessResult struct {
-	Data        []byte
-	ContentType string
-	ProcessTime time.Duration
-}
+// 使用 imaging.ProcessResult 替代重复定义
+type ProcessResult = imaging.ProcessResult
 
 type ConcurrentImageProcessor struct {
 	workerPool    chan struct{}
@@ -93,8 +89,6 @@ func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
 	atomic.AddInt32(&p.activeWorkers, 1)
 	defer atomic.AddInt32(&p.activeWorkers, -1) // 确保任务完成后减少计数
 
-	start := time.Now()
-
 	select {
 	case <-task.Context.Done():
 		task.ErrorChan <- task.Context.Err()
@@ -102,9 +96,7 @@ func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
 	default:
 	}
 
-	processedData, contentType, err := imaging.ProcessImage(task.ImageData, task.Params)
-	processTime := time.Since(start)
-
+	result, err := imaging.ProcessImageWithTiming(task.ImageData, task.Params)
 	if err != nil {
 		select {
 		case task.ErrorChan <- err:
@@ -112,12 +104,6 @@ func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
 		case <-p.ctx.Done():
 		}
 		return
-	}
-
-	result := ProcessResult{
-		Data:        processedData,
-		ContentType: contentType,
-		ProcessTime: processTime,
 	}
 
 	select {
@@ -161,18 +147,7 @@ func (p *ConcurrentImageProcessor) ProcessAsync(ctx context.Context, imageData [
 }
 
 func (p *ConcurrentImageProcessor) processSynchronously(imageData []byte, params imaging.ImageParams) (ProcessResult, error) {
-	start := time.Now()
-
-	processedData, contentType, err := imaging.ProcessImage(imageData, params)
-	if err != nil {
-		return ProcessResult{}, err
-	}
-
-	return ProcessResult{
-		Data:        processedData,
-		ContentType: contentType,
-		ProcessTime: time.Since(start),
-	}, nil
+	return imaging.ProcessImageWithTiming(imageData, params)
 }
 
 func (p *ConcurrentImageProcessor) GetStats() ProcessorStats {

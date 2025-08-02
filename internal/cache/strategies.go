@@ -48,13 +48,13 @@ type AccessStats struct {
 	AccessPattern []time.Time `json:"-"` // 最近访问模式
 }
 
-// NewIntelligentCacheStrategy 创建智能缓存策略
+// NewIntelligentCacheStrategy 创建缓存策略
 func NewIntelligentCacheStrategy() *IntelligentCacheStrategy {
 	return &IntelligentCacheStrategy{
 		accessStats:     make(map[string]*AccessStats),
-		l1SizeThreshold: 100 * 1024,  // 100KB以下进L1
-		l2SizeThreshold: 1024 * 1024, // 1MB以下进L2
-		hotThreshold:    10,          // 访问10次以上算热点
+		l1SizeThreshold: 200 * 1024,      // 200KB以下进L1（小文件快速缓存）
+		l2SizeThreshold: 2 * 1024 * 1024, // 2MB以下进L2（中等文件）
+		hotThreshold:    10,              // 访问10次以上算热点
 	}
 }
 
@@ -79,6 +79,11 @@ func (s *IntelligentCacheStrategy) ShouldCache(level CacheLevel, key string, val
 	case L2Redis:
 		// L2: 中等大小文件 + 中频访问
 		if metadata.Size <= s.l2SizeThreshold {
+			// 超过L1阈值的文件优先进入L2
+			if metadata.Size > s.l1SizeThreshold {
+				return true
+			}
+			// 高频访问文件
 			if exists && stats.Count >= 3 {
 				return true
 			}

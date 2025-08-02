@@ -39,9 +39,7 @@ type StorageService interface {
 }
 
 type ImageService interface {
-	ProcessImageRequest(imagePath string, params imaging.ImageParams) ([]byte, string, error)
-	ProcessImageRequestWithContext(ctx context.Context, imagePath string, params imaging.ImageParams) ([]byte, string, error)
-	ProcessImageRequestWithTiming(imagePath string, params imaging.ImageParams) (ProcessResult, error)
+	ProcessImageRequest(imagePath string, params imaging.ImageParams) (ProcessResult, error)
 	ProcessBatch(ctx context.Context, request BatchProcessRequest) (BatchProcessResult, error)
 	Close() error
 	GetProcessorStats() concurrent.ProcessorStats
