@@ -1,6 +1,4 @@
-# hikarinagi image process service(HIPS)
-
-切图服务，[bimg](https://github.com/h2non/bimg)负责核心的图片处理，[gin](https://github.com/gin-gonic/gin)负责网络请求处理
+hikarinagi的图片处理服务(Hikarinagi Image Process Service)，[bimg](https://github.com/h2non/bimg) 负责核心的图片处理，[gin](https://github.com/gin-gonic/gin) 负责网络请求处理
 
 ## 快速开始
 
@@ -13,14 +11,14 @@
 ### 安装依赖
 
 ```bash
-sudo apt-get install libvips-dev
+sudo apt install libvips-dev
+sudo yum install libvips-dev
+brew install vips (For MacOS)
 ```
 
 ### 环境变量
 
-#### 环境变量配置
-
-| 环境变量 | 描述 | 默认值 | 必须 |
+| 环境变量 | 描述 | 默认值 | 是否必须 |
 |---------|------|--------|----------|
 | `R2_ENDPOINT` | Cloudflare R2存储端点地址 | - | ✅ |
 | `R2_ACCESS_KEY` | R2访问密钥 | - | ✅ |
@@ -96,12 +94,16 @@ http://localhost:8080/path/to/image.jpg?w=300&h=200&q=85&f=webp&blur=2
 GET /health
 ```
 
-### 缓存层级
+### 部署
 
-- **L1 - 内存缓存**: 最热门的图片，LRU策略，默认1GB
-- **L2 - Redis缓存**: 比较热门的图片，默认3GB
-- **L3 - 磁盘缓存**: 热门原图，默认10GB
-- **L4 - CDN缓存**: 主要缓存层（由CDN提供）
+默认启用 `libvips` 的多线程处理，推荐部署在核心数不小于16，RAM不小于32GiB的实例上来达到最佳性能
+
+### 缓存
+
+- **L1 - 内存**: 最热门的图片，LRU策略，默认1GB
+- **L2 - Redis**: 比较热门的图片，默认3GB
+- **L3 - Disk**: 热门原图，默认10GB
+- **L4 - CDN**: 主要缓存层
 
 ## 许可证
 
