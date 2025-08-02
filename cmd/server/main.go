@@ -8,6 +8,7 @@ import (
 	"hips/internal/handler"
 	"hips/internal/server"
 	"hips/internal/service"
+	"hips/pkg/imaging"
 )
 
 func main() {
@@ -15,6 +16,12 @@ func main() {
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
 	}
+
+	imaging.ConfigureVips(
+		cfg.Concurrent.VipsConcurrency,
+		cfg.Concurrent.VipsCacheSize,
+		cfg.Concurrent.VipsCacheMem,
+	)
 
 	cacheService := cache.NewMemoryCache(cfg.Cache.TTL, cfg.Cache.Cleanup)
 
@@ -40,7 +47,7 @@ func main() {
 		}
 		multiCache, err := cache.NewMultiLevelCache(cacheConfig)
 		if err != nil {
-			log.Printf("Failed to create multi-level cache, falling back to simple cache: %v", err)
+			log.Printf("Failed to create cache, falling back to simple cache: %v", err)
 			storageService, err = service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
 			if err != nil {
 				log.Fatal("Failed to create storage service:", err)
@@ -52,7 +59,7 @@ func main() {
 				log.Fatal("Failed to create storage service with multi-cache:", err)
 			}
 			imageService = service.NewImageServiceWithMultiCache(storageService, multiCache, cfg.Concurrent)
-			log.Printf("Multi-level cache enabled - L1: %v, L2: %v, L3: %v",
+			log.Printf("cache enabled - L1: %v, L2: %v, L3: %v",
 				cfg.MultiCache.L1Enabled, cfg.MultiCache.L2Enabled, cfg.MultiCache.L3Enabled)
 		}
 	} else {

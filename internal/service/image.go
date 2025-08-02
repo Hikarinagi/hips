@@ -141,9 +141,25 @@ func (s *ImageServiceImpl) ProcessImageRequestWithTiming(imagePath string, param
 		return ProcessResult{}, err
 	}
 
-	processResult, err := imaging.ProcessImageWithTiming(storageResult.Data, params)
-	if err != nil {
-		return ProcessResult{}, err
+	var processResult imaging.ProcessResult
+	if s.enableAsync && s.processor != nil {
+		// 异步处理
+		concurrentResult, err := s.processor.ProcessAsync(ctx, storageResult.Data, params)
+		if err != nil {
+			return ProcessResult{}, err
+		}
+		processResult = imaging.ProcessResult{
+			Data:          concurrentResult.Data,
+			ContentType:   concurrentResult.ContentType,
+			ProcessTime:   concurrentResult.ProcessTime,
+			ResizeSkipped: false, // 并发处理器没有这个字段
+		}
+	} else {
+		// 同步处理（降级）
+		processResult, err = imaging.ProcessImageWithTiming(storageResult.Data, params)
+		if err != nil {
+			return ProcessResult{}, err
+		}
 	}
 
 	cachedImage := cache.CachedImage{

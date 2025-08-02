@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"hips/pkg/imaging"
@@ -88,6 +89,10 @@ func (p *ConcurrentImageProcessor) worker(id int) {
 }
 
 func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
+	// 开始处理任务，增加活跃worker计数
+	atomic.AddInt32(&p.activeWorkers, 1)
+	defer atomic.AddInt32(&p.activeWorkers, -1) // 确保任务完成后减少计数
+
 	start := time.Now()
 
 	select {
@@ -178,7 +183,7 @@ func (p *ConcurrentImageProcessor) GetStats() ProcessorStats {
 		MaxWorkers:    p.maxWorkers,
 		QueueLength:   len(p.taskQueue),
 		MaxQueueSize:  p.maxQueueSize,
-		ActiveWorkers: int(p.activeWorkers),
+		ActiveWorkers: int(atomic.LoadInt32(&p.activeWorkers)),
 	}
 }
 

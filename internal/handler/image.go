@@ -46,11 +46,10 @@ func (h *ImageHandler) HandleImageProxy(c *gin.Context) {
 
 	result, err := h.imageService.ProcessImageRequestWithTiming(imagePath, params)
 	if err != nil {
-		log.Printf("Error processing image: %v", err)
-
 		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NoSuchKey") {
 			c.JSON(http.StatusNotFound, gin.H{"error": "image not found"})
 		} else {
+			log.Printf("Error processing image: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "image processing failed"})
 		}
 		return

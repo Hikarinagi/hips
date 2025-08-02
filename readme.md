@@ -32,6 +32,9 @@ sudo apt-get install libvips-dev
 | `TASK_TIMEOUT` | 任务执行超时时间 | `30s` | ❌ |
 | `ENABLE_ASYNC` | 启用异步处理 | `true` | ❌ |
 | `BUFFER_SIZE` | 缓冲区大小 | `100` | ❌ |
+| `VIPS_CONCURRENCY` | libvips内部线程数 | CPU核心数 | ❌ |
+| `VIPS_CACHE_SIZE` | libvips操作缓存数量 | `200` | ❌ |
+| `VIPS_CACHE_MEM_MB` | libvips缓存内存限制(MB) | `256` | ❌ |
 | `NET_MAX_IDLE_CONNS` | 最大空闲连接数 | `100` | ❌ |
 | `NET_MAX_IDLE_CONNS_PER_HOST` | 每个host的最大空闲连接数 | `20` | ❌ |
 | `NET_MAX_CONNS_PER_HOST` | 每个host的最大连接数 | `50` | ❌ |
@@ -41,7 +44,7 @@ sudo apt-get install libvips-dev
 | `NET_REQUEST_TIMEOUT` | 整体请求超时时间 | `60s` | ❌ |
 | `NET_DISABLE_COMPRESSION` | 是否禁用压缩 | `false` | ❌ |
 | `CACHE_L1_ENABLED` | 启用L1内存缓存 | `true` | ❌ |
-| `CACHE_L2_ENABLED` | 启用L2 Redis缓存 | `false` | ❌ |
+| `CACHE_L2_ENABLED` | 启用L2 Redis缓存 | `true` | ❌ |
 | `CACHE_L3_ENABLED` | 启用L3磁盘缓存 | `true` | ❌ |
 | `CACHE_L1_MAX_MEMORY_MB` | L1最大内存限制(MB) | `1024` | ❌ |
 | `CACHE_L2_MAX_MEMORY_MB` | L2最大内存限制(MB) | `3072` | ❌ |
@@ -96,7 +99,7 @@ GET /health
 ### 缓存层级
 
 - **L1 - 内存缓存**: 最热门的图片，LRU策略，默认1GB
-- **L2 - Redis缓存**: 比较热门的图片，默认3GB（可选）
+- **L2 - Redis缓存**: 比较热门的图片，默认3GB
 - **L3 - 磁盘缓存**: 热门原图，默认10GB
 - **L4 - CDN缓存**: 主要缓存层（由CDN提供）
 

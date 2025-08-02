@@ -33,8 +33,7 @@ func (s *Server) SetupRoutes() {
 func (s *Server) Start(port string) error {
 	s.SetupRoutes()
 
-	log.Printf("Image proxy service starting on port %s", port)
-	log.Printf("Example URL: http://localhost:%s/path/to/image.jpg?w=300&h=200&q=85&f=avif", port)
+	log.Printf("hips starting on port %s", port)
 
 	return s.router.Run(":" + port)
 }

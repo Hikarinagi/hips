@@ -65,6 +65,10 @@ type ConcurrentConfig struct {
 	TaskTimeout  time.Duration `json:"task_timeout"`
 	EnableAsync  bool          `json:"enable_async"`
 	BufferSize   int           `json:"buffer_size"`
+
+	VipsConcurrency int `json:"vips_concurrency"` // libvips内部线程数，0=自动使用CPU核心数
+	VipsCacheSize   int `json:"vips_cache_size"`  // libvips操作缓存数量
+	VipsCacheMem    int `json:"vips_cache_mem"`   // libvips缓存内存限制(MB)
 }
 
 type NetworkConfig struct {
@@ -86,6 +90,11 @@ const (
 	DefaultMaxQueueSize = 0
 	DefaultTaskTimeout  = 30 * time.Second
 	DefaultBufferSize   = 100
+
+	// libvips并发
+	DefaultVipsConcurrency = 0   // 0表示自动使用CPU核心数
+	DefaultVipsCacheSize   = 300 // 操作缓存数量
+	DefaultVipsCacheMem    = 512 // 缓存内存限制(MB)
 
 	// 网络配置默认值
 	DefaultMaxIdleConns        = 100
@@ -136,6 +145,11 @@ func Load() (*Config, error) {
 			TaskTimeout:  getEnvDurationWithDefault("TASK_TIMEOUT", DefaultTaskTimeout),
 			EnableAsync:  getEnvBoolWithDefault("ENABLE_ASYNC", true),
 			BufferSize:   getEnvIntWithDefault("BUFFER_SIZE", DefaultBufferSize),
+
+			// libvips并发优化配置
+			VipsConcurrency: getEnvIntWithDefault("VIPS_CONCURRENCY", DefaultVipsConcurrency),
+			VipsCacheSize:   getEnvIntWithDefault("VIPS_CACHE_SIZE", DefaultVipsCacheSize),
+			VipsCacheMem:    getEnvIntWithDefault("VIPS_CACHE_MEM_MB", DefaultVipsCacheMem),
 		},
 		Network: NetworkConfig{
 			MaxIdleConns:        getEnvIntWithDefault("NET_MAX_IDLE_CONNS", DefaultMaxIdleConns),

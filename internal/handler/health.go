@@ -8,6 +8,7 @@ import (
 
 	"hips/internal/cache"
 	"hips/internal/service"
+	"hips/pkg/imaging"
 )
 
 type HealthHandler struct {
@@ -31,9 +32,9 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 		"timestamp": time.Now().Unix(),
 	}
 
-	if h.cache != nil {
-		response["cache_items"] = h.cache.ItemCount()
-	}
+	// if h.cache != nil {
+	// 	response["cache_items"] = h.cache.ItemCount()
+	// }
 
 	if h.imageService != nil {
 		stats := h.imageService.GetProcessorStats()
@@ -46,6 +47,9 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 			"active_workers":  stats.ActiveWorkers,
 			"queue_usage_pct": float64(stats.QueueLength) / float64(stats.MaxQueueSize) * 100,
 		}
+
+		// 添加libvips配置信息
+		response["libvips"] = imaging.GetVipsInfo()
 
 		response["metrics"] = gin.H{
 			"processed_images":    metrics.ProcessedImages,
@@ -72,7 +76,7 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 						"usage_pct":      float64(stat.UsedMemory) / float64(stat.MaxMemory) * 100,
 					}
 				}
-				response["multi_cache"] = multiCacheInfo
+				response["cache"] = multiCacheInfo
 			}
 		}
 	}

@@ -140,11 +140,12 @@ func (rm *ResourceMonitor) collectMetrics() {
 		rm.metrics.cpuUsage = (activeWorkers / maxWorkers) * float64(numCPU)
 	}
 
-	log.Printf("Resource Monitor - Active Workers: %d/%d, Queue: %d/%d, Memory: %dMB, CPU Usage: %.2f",
-		stats.ActiveWorkers, stats.MaxWorkers,
-		stats.QueueLength, stats.MaxQueueSize,
-		rm.metrics.memoryUsage/(1024*1024),
-		rm.metrics.cpuUsage)
+	// 注释掉定时输出，避免日志过多
+	// log.Printf("Resource Monitor - Active Workers: %d/%d, Queue: %d/%d, Memory: %dMB, CPU Usage: %.2f",
+	//	stats.ActiveWorkers, stats.MaxWorkers,
+	//	stats.QueueLength, stats.MaxQueueSize,
+	//	rm.metrics.memoryUsage/(1024*1024),
+	//	rm.metrics.cpuUsage)
 }
 
 func (at *AutoTuner) tune() {
