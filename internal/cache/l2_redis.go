@@ -200,16 +200,49 @@ func (r *L2RedisAdapter) Stats() CacheStats {
 	defer cancel()
 
 	var usedMemory int64
-	if memInfo, err := r.client.Info(ctx, "memory").Result(); err == nil {
-		// 解析Redis内存信息
-		usedMemory = parseRedisMemoryInfo(memInfo)
-		// 如果解析失败，使用估算值
-		if usedMemory <= 0 {
-			// 基于key数量的粗略估算
-			if keyCount, err := r.client.DBSize(ctx).Result(); err == nil {
-				usedMemory = keyCount * 1024 // 假设平均每个key 1KB
+	var items int64
+
+	// 获取所有key
+	keys, err := r.client.Keys(ctx, r.keyPrefix+"*").Result()
+	if err != nil {
+		items = 0
+	} else {
+		items = int64(len(keys))
+
+		if len(keys) > 0 {
+			sampleSize := len(keys)
+			if sampleSize > 5 {
+				sampleSize = 5 // 采样5个key来估算
+			}
+
+			var totalSampleSize int64
+			validSamples := 0
+
+			for i := 0; i < sampleSize; i++ {
+				if size, err := r.client.MemoryUsage(ctx, keys[i]).Result(); err == nil {
+					totalSampleSize += size
+					validSamples++
+				} else {
+					// fallback：通过获取值的长度来估算
+					if val, err := r.client.Get(ctx, keys[i]).Result(); err == nil {
+						// Redis存储JSON数据，大约是原始数据的1.2倍
+						estimatedSize := int64(len(val)) * 120 / 100
+						totalSampleSize += estimatedSize
+						validSamples++
+					}
+				}
+			}
+
+			if validSamples > 0 {
+				avgKeySize := totalSampleSize / int64(validSamples)
+				usedMemory = avgKeySize * items
 			}
 		}
+	}
+
+	// 如果上述方法都失败，使用保守估算
+	if usedMemory <= 0 && items > 0 {
+		usedMemory = items * 20480
 	}
 
 	hitCount := atomic.LoadInt64(&r.hitCount)
@@ -219,11 +252,6 @@ func (r *L2RedisAdapter) Stats() CacheStats {
 	var hitRatio float64
 	if total > 0 {
 		hitRatio = float64(hitCount) / float64(total)
-	}
-
-	var items int64
-	if result, err := r.client.DBSize(ctx).Result(); err == nil {
-		items = result
 	}
 
 	return CacheStats{

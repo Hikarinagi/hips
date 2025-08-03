@@ -70,9 +70,11 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 			cacheStats := multiCacheService.GetMultiCacheStats()
 			if len(cacheStats) > 0 {
 				multiCacheInfo := make(map[string]gin.H)
-				totalCacheMemory := int64(0)
+				l1Memory := int64(0)
 				for level, stat := range cacheStats {
-					totalCacheMemory += stat.UsedMemory
+					if level == cache.L1Memory {
+						l1Memory = stat.UsedMemory
+					}
 					multiCacheInfo[level.String()] = gin.H{
 						"items":          stat.Items,
 						"used_memory_mb": stat.UsedMemory / (1024 * 1024),
@@ -83,21 +85,20 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 					}
 				}
 				response["cache"] = multiCacheInfo
-				totalCacheMemoryMB := totalCacheMemory / (1024 * 1024)
-				response["total_cache_memory_mb"] = totalCacheMemoryMB
 
-				// 内存泄漏检测：比较运行时内存和缓存内存
 				runtimeMemoryMB := int64(memStats.Alloc) / (1024 * 1024)
-				unaccountedMemoryMB := runtimeMemoryMB - totalCacheMemoryMB
+				l1MemoryMB := l1Memory / (1024 * 1024)
+				unaccountedMemoryMB := runtimeMemoryMB - l1MemoryMB
+
 				response["memory_analysis"] = gin.H{
 					"runtime_memory_mb":     runtimeMemoryMB,
-					"cache_memory_mb":       totalCacheMemoryMB,
+					"l1_cache_memory_mb":    l1MemoryMB,
 					"unaccounted_memory_mb": unaccountedMemoryMB,
-					"potential_leak":        unaccountedMemoryMB > 500, // 超过500MB认为可能有泄漏
+					"potential_leak":        unaccountedMemoryMB > 500,
+					"note":                  "只统计L1内存(程序进程)，L2是Redis进程，L3是磁盘存储",
 				}
 			}
 		} else if h.cache != nil {
-			// 传统单层缓存统计
 			response["cache"] = gin.H{
 				"type":  "single_level",
 				"items": h.cache.ItemCount(),
