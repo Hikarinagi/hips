@@ -118,11 +118,9 @@ func NewMultiLevelCache(config *MultiCacheConfig) (*MultiLevelCache, error) {
 	return cache, nil
 }
 
-// Get 从多层缓存获取数据
 func (m *MultiLevelCache) Get(ctx context.Context, key string) (interface{}, *CacheHitInfo, error) {
 	start := time.Now()
 
-	// 依次检查各个层级
 	levels := []struct {
 		adapter CacheAdapter
 		level   CacheLevel
@@ -138,24 +136,19 @@ func (m *MultiLevelCache) Get(ctx context.Context, key string) (interface{}, *Ca
 			continue
 		}
 
-		// 更新统计
 		m.mu.Lock()
 		m.stats[l.level].Gets++
 		m.mu.Unlock()
 
-		// 尝试获取数据
 		value, err := l.adapter.Get(ctx, key)
 		if err == nil {
-			// 命中！
 			retrieveTime := time.Since(start)
 
-			// 更新统计
 			m.mu.Lock()
 			m.stats[l.level].Hits++
 			m.mu.Unlock()
 
-			// 更新访问信息
-			size := m.calculateSize(value)
+			size := CalculateValueSize(value)
 			metadata := &CacheMetadata{
 				Size:        size,
 				AccessCount: 1,
@@ -194,9 +187,8 @@ func (m *MultiLevelCache) Get(ctx context.Context, key string) (interface{}, *Ca
 	return nil, hitInfo, fmt.Errorf("cache miss on all levels")
 }
 
-// Set 设置多层缓存数据
 func (m *MultiLevelCache) Set(ctx context.Context, key string, value interface{}, duration time.Duration) error {
-	size := m.calculateSize(value)
+	size := CalculateValueSize(value)
 	metadata := &CacheMetadata{
 		Size:        size,
 		AccessCount: 1,
@@ -227,7 +219,7 @@ func (m *MultiLevelCache) Set(ctx context.Context, key string, value interface{}
 		if m.strategy.ShouldCache(l.level, key, value, metadata) {
 			err := l.adapter.Set(ctx, key, value, duration)
 			if err != nil {
-				errors = append(errors, fmt.Errorf("L%d set failed: %w", int(l.level), err))
+				errors = append(errors, fmt.Errorf("l%d set failed: %w", int(l.level), err))
 				log.Printf("Failed to set cache on level %s: %v", l.level.String(), err)
 			} else {
 				// 更新统计
@@ -276,7 +268,6 @@ func (m *MultiLevelCache) GetStats() map[CacheLevel]CacheStats {
 	return result
 }
 
-// Evict 手动清除缓存
 func (m *MultiLevelCache) Evict(ctx context.Context, key string) error {
 	var errors []error
 
@@ -296,7 +287,6 @@ func (m *MultiLevelCache) Evict(ctx context.Context, key string) error {
 	return nil
 }
 
-// Clear 清空指定层级缓存
 func (m *MultiLevelCache) Clear(ctx context.Context, level CacheLevel) error {
 	var adapter CacheAdapter
 
@@ -318,7 +308,6 @@ func (m *MultiLevelCache) Clear(ctx context.Context, level CacheLevel) error {
 	return adapter.Clear(ctx)
 }
 
-// Close 关闭缓存服务
 func (m *MultiLevelCache) Close() error {
 	var errors []error
 
@@ -338,19 +327,17 @@ func (m *MultiLevelCache) Close() error {
 	return nil
 }
 
-// promoteToHigherLevels 提升数据到更高层级
+// 提升数据到更高层级缓存
 func (m *MultiLevelCache) promoteToHigherLevels(ctx context.Context, key string, value interface{}, currentLevel CacheLevel) {
-	size := m.calculateSize(value)
+	size := CalculateValueSize(value)
 	metadata := &CacheMetadata{
 		Size:        size,
-		AccessCount: 2, // 已经被访问过一次
+		AccessCount: 2,
 		LastAccess:  time.Now(),
 	}
 
-	// 根据当前层级决定提升策略
 	switch currentLevel {
 	case L3Disk:
-		// 从L3提升到L2
 		if m.config.L2Enabled && m.l2Redis != nil && m.strategy.ShouldCache(L2Redis, key, value, metadata) {
 			if err := m.l2Redis.Set(ctx, key, value, time.Hour); err == nil {
 				m.mu.Lock()
@@ -360,7 +347,6 @@ func (m *MultiLevelCache) promoteToHigherLevels(ctx context.Context, key string,
 			}
 		}
 
-		// 从L3提升到L1
 		if m.config.L1Enabled && m.l1Memory != nil && m.strategy.ShouldCache(L1Memory, key, value, metadata) {
 			if err := m.l1Memory.Set(ctx, key, value, time.Hour); err == nil {
 				m.mu.Lock()
@@ -371,7 +357,6 @@ func (m *MultiLevelCache) promoteToHigherLevels(ctx context.Context, key string,
 		}
 
 	case L2Redis:
-		// 从L2提升到L1
 		if m.config.L1Enabled && m.l1Memory != nil && m.strategy.ShouldCache(L1Memory, key, value, metadata) {
 			if err := m.l1Memory.Set(ctx, key, value, time.Hour); err == nil {
 				m.mu.Lock()
@@ -383,7 +368,6 @@ func (m *MultiLevelCache) promoteToHigherLevels(ctx context.Context, key string,
 	}
 }
 
-// backgroundSync 后台同步任务
 func (m *MultiLevelCache) backgroundSync(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -393,7 +377,6 @@ func (m *MultiLevelCache) backgroundSync(interval time.Duration) {
 	}
 }
 
-// performSync 执行同步操作
 func (m *MultiLevelCache) performSync() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -408,20 +391,5 @@ func (m *MultiLevelCache) performSync() {
 			stats.Hits,
 			float64(stats.Hits)/float64(stats.Gets)*100,
 			stats.Promotions)
-	}
-}
-
-// calculateSize 计算数据大小
-func (m *MultiLevelCache) calculateSize(value interface{}) int64 {
-	switch v := value.(type) {
-	case []byte:
-		return int64(len(v))
-	case string:
-		return int64(len(v))
-	case CachedImage:
-		return int64(len(v.Data))
-	default:
-		// 粗略估算
-		return 1024
 	}
 }

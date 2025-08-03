@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -198,8 +201,15 @@ func (r *L2RedisAdapter) Stats() CacheStats {
 
 	var usedMemory int64
 	if memInfo, err := r.client.Info(ctx, "memory").Result(); err == nil {
-		_ = memInfo
-		usedMemory = r.maxMemory / 4
+		// 解析Redis内存信息
+		usedMemory = parseRedisMemoryInfo(memInfo)
+		// 如果解析失败，使用估算值
+		if usedMemory <= 0 {
+			// 基于key数量的粗略估算
+			if keyCount, err := r.client.DBSize(ctx).Result(); err == nil {
+				usedMemory = keyCount * 1024 // 假设平均每个key 1KB
+			}
+		}
 	}
 
 	hitCount := atomic.LoadInt64(&r.hitCount)
@@ -230,56 +240,58 @@ func (r *L2RedisAdapter) Close() error {
 	return r.client.Close()
 }
 
-// updateAccessInfo 异步更新访问信息
+// 异步更新访问信息
 func (r *L2RedisAdapter) updateAccessInfo(ctx context.Context, redisKey string, item *RedisCacheItem) {
 	itemData, err := json.Marshal(item)
 	if err != nil {
 		return
 	}
 
-	// 更新Redis中的数据，保持原有的TTL
 	ttl := r.client.TTL(ctx, redisKey).Val()
 	if ttl > 0 {
 		r.client.Set(ctx, redisKey, itemData, ttl)
 	}
 }
 
-// configureRedisMemoryPolicy 配置Redis内存策略
+// 配置Redis内存策略
 func (r *L2RedisAdapter) configureRedisMemoryPolicy(ctx context.Context) {
-	// 设置最大内存
 	r.client.ConfigSet(ctx, "maxmemory", fmt.Sprintf("%d", r.maxMemory))
-
-	// 设置驱逐策略为allkeys-lru (最近最少使用)
 	r.client.ConfigSet(ctx, "maxmemory-policy", "allkeys-lru")
-
-	// 设置驱逐样本数
 	r.client.ConfigSet(ctx, "maxmemory-samples", "5")
 }
 
-// GetKeysByPattern 根据模式获取key列表 (用于调试和监控)
-func (r *L2RedisAdapter) GetKeysByPattern(ctx context.Context, pattern string) ([]string, error) {
-	fullPattern := r.keyPrefix + pattern
+// 解析Redis INFO memory命令的输出
+func parseRedisMemoryInfo(memInfo string) int64 {
+	re := regexp.MustCompile(`used_memory:(\d+)`)
+	matches := re.FindStringSubmatch(memInfo)
 
-	var keys []string
-	iter := r.client.Scan(ctx, 0, fullPattern, 0).Iterator()
-
-	for iter.Next(ctx) {
-		key := iter.Val()
-		// 移除前缀
-		if len(key) > len(r.keyPrefix) {
-			keys = append(keys, key[len(r.keyPrefix):])
+	if len(matches) >= 2 {
+		if usedBytes, err := strconv.ParseInt(matches[1], 10, 64); err == nil {
+			return usedBytes
 		}
 	}
 
-	return keys, iter.Err()
-}
+	// 备用：解析human readable格式
+	reHuman := regexp.MustCompile(`used_memory_human:([0-9.]+)([KMGT]?)`)
+	matchesHuman := reHuman.FindStringSubmatch(memInfo)
 
-// FlushExpired 清理过期的缓存项 (Redis会自动处理，这里主要用于统计)
-func (r *L2RedisAdapter) FlushExpired(ctx context.Context) error {
-	// Redis会自动清理过期key，这里主要更新统计信息
+	if len(matchesHuman) >= 3 {
+		if size, err := strconv.ParseFloat(matchesHuman[1], 64); err == nil {
+			unit := strings.ToUpper(matchesHuman[2])
+			switch unit {
+			case "K":
+				return int64(size * 1024)
+			case "M":
+				return int64(size * 1024 * 1024)
+			case "G":
+				return int64(size * 1024 * 1024 * 1024)
+			case "T":
+				return int64(size * 1024 * 1024 * 1024 * 1024)
+			default:
+				return int64(size)
+			}
+		}
+	}
 
-	// 可以获取过期key的数量来更新evictionCount
-	// 但Redis没有直接提供这个信息，所以我们依赖Redis的自动清理
-
-	return nil
+	return 0
 }

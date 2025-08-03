@@ -25,19 +25,18 @@ func NewImageHandler(imageService service.ImageService, healthHandler *HealthHan
 }
 
 func (h *ImageHandler) HandleRequest(c *gin.Context) {
-	path := strings.TrimPrefix(c.Request.URL.Path, "/")
+	imagePath := strings.TrimPrefix(c.Request.URL.Path, "/")
 
-	if path == "health" {
+	if imagePath == "health" {
 		h.healthHandler.HandleHealth(c)
 		return
 	}
 
-	h.HandleImageProxy(c)
+	h.HandleImageProxy(c, imagePath)
 }
 
-func (h *ImageHandler) HandleImageProxy(c *gin.Context) {
-	imagePath := strings.TrimPrefix(c.Request.URL.Path, "/")
-	if imagePath == "" || imagePath == "health" {
+func (h *ImageHandler) HandleImageProxy(c *gin.Context, imagePath string) {
+	if imagePath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"msg": "Ciallo～ (∠・ω< )⌒★"})
 		return
 	}

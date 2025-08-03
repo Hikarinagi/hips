@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"runtime"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,10 +33,6 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 		"timestamp": time.Now().Unix(),
 	}
 
-	// if h.cache != nil {
-	// 	response["cache_items"] = h.cache.ItemCount()
-	// }
-
 	if h.imageService != nil {
 		stats := h.imageService.GetProcessorStats()
 		metrics := h.imageService.GetMetrics()
@@ -51,22 +48,31 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 		// 添加libvips配置信息
 		response["libvips"] = imaging.GetVipsInfo()
 
+		// 获取实际内存使用情况
+		var memStats runtime.MemStats
+		runtime.ReadMemStats(&memStats)
+		runtimeMemoryMB := int64(memStats.Alloc) / (1024 * 1024)
+
 		response["metrics"] = gin.H{
 			"processed_images":    metrics.ProcessedImages,
 			"avg_process_time_ms": metrics.AvgProcessTime.Milliseconds(),
 			"memory_usage_mb":     metrics.MemoryUsage / (1024 * 1024),
+			"runtime_memory_mb":   runtimeMemoryMB,
 			"cpu_usage":           metrics.CPUUsage,
 			"error_count":         metrics.ErrorCount,
 			"success_rate":        metrics.SuccessRate * 100,
 		}
 
+		// 检查多层缓存统计
 		if multiCacheService, ok := h.imageService.(interface {
 			GetMultiCacheStats() map[cache.CacheLevel]cache.CacheStats
 		}); ok {
 			cacheStats := multiCacheService.GetMultiCacheStats()
 			if len(cacheStats) > 0 {
 				multiCacheInfo := make(map[string]gin.H)
+				totalCacheMemory := int64(0)
 				for level, stat := range cacheStats {
+					totalCacheMemory += stat.UsedMemory
 					multiCacheInfo[level.String()] = gin.H{
 						"items":          stat.Items,
 						"used_memory_mb": stat.UsedMemory / (1024 * 1024),
@@ -77,6 +83,24 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 					}
 				}
 				response["cache"] = multiCacheInfo
+				totalCacheMemoryMB := totalCacheMemory / (1024 * 1024)
+				response["total_cache_memory_mb"] = totalCacheMemoryMB
+
+				// 内存泄漏检测：比较运行时内存和缓存内存
+				runtimeMemoryMB := int64(memStats.Alloc) / (1024 * 1024)
+				unaccountedMemoryMB := runtimeMemoryMB - totalCacheMemoryMB
+				response["memory_analysis"] = gin.H{
+					"runtime_memory_mb":     runtimeMemoryMB,
+					"cache_memory_mb":       totalCacheMemoryMB,
+					"unaccounted_memory_mb": unaccountedMemoryMB,
+					"potential_leak":        unaccountedMemoryMB > 500, // 超过500MB认为可能有泄漏
+				}
+			}
+		} else if h.cache != nil {
+			// 传统单层缓存统计
+			response["cache"] = gin.H{
+				"type":  "single_level",
+				"items": h.cache.ItemCount(),
 			}
 		}
 	}

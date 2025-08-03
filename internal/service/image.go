@@ -22,7 +22,8 @@ type ImageServiceImpl struct {
 	taskTimeout    time.Duration
 }
 
-func NewImageService(storageService StorageService, cacheService cache.CacheService, concurrentConfig config.ConcurrentConfig) *ImageServiceImpl {
+// 创建处理器和监控器（公共逻辑）
+func createProcessorAndMonitor(concurrentConfig config.ConcurrentConfig) (*concurrent.ConcurrentImageProcessor, *concurrent.ResourceMonitor) {
 	processorConfig := concurrent.ProcessorConfig{
 		MaxWorkers:   concurrentConfig.MaxWorkers,
 		MaxQueueSize: concurrentConfig.MaxQueueSize,
@@ -39,6 +40,12 @@ func NewImageService(storageService StorageService, cacheService cache.CacheServ
 		EnableAutoTuning: true,
 	}
 	monitor := concurrent.NewResourceMonitor(processor, monitorConfig)
+
+	return processor, monitor
+}
+
+func NewImageService(storageService StorageService, cacheService cache.CacheService, concurrentConfig config.ConcurrentConfig) *ImageServiceImpl {
+	processor, monitor := createProcessorAndMonitor(concurrentConfig)
 
 	return &ImageServiceImpl{
 		storageService: storageService,
@@ -51,22 +58,7 @@ func NewImageService(storageService StorageService, cacheService cache.CacheServ
 }
 
 func NewImageServiceWithMultiCache(storageService StorageService, multiCache cache.LayeredCacheService, concurrentConfig config.ConcurrentConfig) *ImageServiceImpl {
-	processorConfig := concurrent.ProcessorConfig{
-		MaxWorkers:   concurrentConfig.MaxWorkers,
-		MaxQueueSize: concurrentConfig.MaxQueueSize,
-		BufferSize:   concurrentConfig.BufferSize,
-	}
-
-	processor := concurrent.NewConcurrentImageProcessor(processorConfig)
-
-	monitorConfig := concurrent.MonitorConfig{
-		MonitorInterval:  30 * time.Second,
-		AutoTuneInterval: 5 * time.Minute,
-		TargetCPUUsage:   0.8,
-		TargetQueueSize:  0.7,
-		EnableAutoTuning: true,
-	}
-	monitor := concurrent.NewResourceMonitor(processor, monitorConfig)
+	processor, monitor := createProcessorAndMonitor(concurrentConfig)
 
 	return &ImageServiceImpl{
 		storageService: storageService,
@@ -136,13 +128,12 @@ func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.
 
 	var processResult imaging.ProcessResult
 	if s.enableAsync && s.processor != nil {
-		// 异步处理
 		processResult, err = s.processor.ProcessAsync(ctx, storageResult.Data, params)
 		if err != nil {
 			return ProcessResult{}, err
 		}
 	} else {
-		// 同步处理（降级）
+		// 同步处理降级
 		processResult, err = imaging.ProcessImageWithTiming(storageResult.Data, params)
 		if err != nil {
 			return ProcessResult{}, err
@@ -181,7 +172,7 @@ func (s *ImageServiceImpl) ProcessImageRequest(imagePath string, params imaging.
 			ResizeSkipped:  processResult.ResizeSkipped,
 		},
 		CacheInfo: &cache.CacheHitInfo{
-			Level: cache.L4CDN, // 表示从源获取
+			Level: cache.L4CDN,
 			Hit:   false,
 		},
 	}, nil

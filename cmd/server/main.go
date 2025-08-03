@@ -23,10 +23,9 @@ func main() {
 		cfg.Concurrent.VipsCacheMem,
 	)
 
-	cacheService := cache.NewMemoryCache(cfg.Cache.TTL, cfg.Cache.Cleanup)
-
 	var storageService service.StorageService
 	var imageService service.ImageService
+	var cacheService cache.CacheService
 
 	if cfg.MultiCache.L1Enabled || cfg.MultiCache.L2Enabled || cfg.MultiCache.L3Enabled {
 		cacheConfig := &cache.MultiCacheConfig{
@@ -47,22 +46,27 @@ func main() {
 		}
 		multiCache, err := cache.NewMultiLevelCache(cacheConfig)
 		if err != nil {
-			log.Printf("Failed to create cache, falling back to simple cache: %v", err)
+			log.Printf("Failed to create multi-level cache, falling back to simple cache: %v", err)
+			// 创建简单缓存作为备用
+			cacheService = cache.NewMemoryCache(cfg.Cache.TTL, cfg.Cache.Cleanup)
 			storageService, err = service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
 			if err != nil {
 				log.Fatal("Failed to create storage service:", err)
 			}
 			imageService = service.NewImageService(storageService, cacheService, cfg.Concurrent)
+			log.Println("Using traditional single-level cache as fallback")
 		} else {
 			storageService, err = service.NewR2StorageServiceWithMultiCache(&cfg.R2, &cfg.Network, multiCache)
 			if err != nil {
 				log.Fatal("Failed to create storage service with multi-cache:", err)
 			}
 			imageService = service.NewImageServiceWithMultiCache(storageService, multiCache, cfg.Concurrent)
-			log.Printf("cache enabled - L1: %v, L2: %v, L3: %v",
+			log.Printf("Multi-level cache enabled - L1: %v, L2: %v, L3: %v",
 				cfg.MultiCache.L1Enabled, cfg.MultiCache.L2Enabled, cfg.MultiCache.L3Enabled)
 		}
 	} else {
+		// 只有在明确禁用多层缓存时才使用简单缓存
+		cacheService = cache.NewMemoryCache(cfg.Cache.TTL, cfg.Cache.Cleanup)
 		storageService, err = service.NewR2StorageService(&cfg.R2, &cfg.Network, cacheService)
 		if err != nil {
 			log.Fatal("Failed to create storage service:", err)
