@@ -30,6 +30,7 @@ func (s *Server) SetupRoutes() {
 	// 管理端点
 	s.router.POST("/admin/cache/clear", s.healthHandler.HandleCacheClear)
 	s.router.POST("/admin/gc", s.healthHandler.HandleForceGC)
+	s.router.POST("/admin/emergency-cleanup", s.healthHandler.HandleEmergencyCleanup)
 
 	// 主要路由（最后设置，避免冲突）
 	s.router.GET("/*path", s.imageHandler.HandleRequest)

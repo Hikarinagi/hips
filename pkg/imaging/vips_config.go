@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"github.com/h2non/bimg"
 )
 
 // ConfigureVips 配置libvips的并发和缓存参数
@@ -45,12 +47,17 @@ func GetVipsInfo() map[string]interface{} {
 // ClearVipsCache 清理libvips缓存
 func ClearVipsCache() int {
 	oldSize := int(C.vips_cache_get_size())
-	// 使用vips_cache_set_max(0)然后恢复的方式来清理缓存
-	oldMax := int(C.vips_cache_get_max())
-	C.vips_cache_set_max(0)             // 清空缓存
-	C.vips_cache_set_max(C.int(oldMax)) // 恢复原来的大小
+
+	// 使用bimg提供的清理函数
+	bimg.VipsCacheDropAll()
+
 	newSize := int(C.vips_cache_get_size())
 	log.Printf("libvips cache cleared: %d -> %d items", oldSize, newSize)
+
+	// 强制垃圾回收以释放Go侧的引用
+	runtime.GC()
+	runtime.GC()
+
 	return oldSize - newSize
 }
 
@@ -94,10 +101,11 @@ func StartAutoCleanup(intervalMinutes int, thresholdPercent float64) {
 
 				if cacheMax > 0 {
 					usagePercent := float64(cacheSize) / float64(cacheMax)
-					if usagePercent >= thresholdPercent {
+					// 更积极的清理策略：50%就开始清理
+					if usagePercent >= 0.5 || cacheSize >= cacheMax {
 						cleared := ClearVipsCache()
-						log.Printf("Auto-cleared libvips cache: %d items (usage was %.1f%%)",
-							cleared, usagePercent*100)
+						log.Printf("Auto-cleared libvips cache: %d items (usage was %.1f%%, threshold: %.1f%%)",
+							cleared, usagePercent*100, thresholdPercent*100)
 
 						// 强制GC
 						runtime.GC()

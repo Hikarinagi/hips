@@ -87,7 +87,13 @@ func (p *ConcurrentImageProcessor) worker(id int) {
 func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
 	// 开始处理任务，增加活跃worker计数
 	atomic.AddInt32(&p.activeWorkers, 1)
-	defer atomic.AddInt32(&p.activeWorkers, -1) // 确保任务完成后减少计数
+	defer func() {
+		atomic.AddInt32(&p.activeWorkers, -1) // 确保任务完成后减少计数
+
+		// 重要：清理可能的内存引用
+		task.ImageData = nil
+		runtime.GC() // 在高并发处理后强制GC
+	}()
 
 	select {
 	case <-task.Context.Done():

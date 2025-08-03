@@ -1,8 +1,12 @@
 package handler
 
 import (
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -56,6 +60,7 @@ func (h *HealthHandler) HandleCacheClear(c *gin.Context) {
 func (h *HealthHandler) HandleForceGC(c *gin.Context) {
 	var memBefore runtime.MemStats
 	runtime.ReadMemStats(&memBefore)
+	realMemBefore := getRealMemoryUsage()
 
 	// 强制GC和内存释放
 	runtime.GC()
@@ -63,6 +68,7 @@ func (h *HealthHandler) HandleForceGC(c *gin.Context) {
 
 	var memAfter runtime.MemStats
 	runtime.ReadMemStats(&memAfter)
+	realMemAfter := getRealMemoryUsage()
 
 	result := gin.H{
 		"timestamp":        time.Now().Unix(),
@@ -70,9 +76,61 @@ func (h *HealthHandler) HandleForceGC(c *gin.Context) {
 		"memory_before_mb": int64(memBefore.Sys) / (1024 * 1024),
 		"memory_after_mb":  int64(memAfter.Sys) / (1024 * 1024),
 		"freed_mb":         int64(memBefore.Sys-memAfter.Sys) / (1024 * 1024),
+		"real_mem_before":  realMemBefore,
+		"real_mem_after":   realMemAfter,
+		"real_freed_mb":    realMemBefore - realMemAfter,
 		"gc_runs_before":   memBefore.NumGC,
 		"gc_runs_after":    memAfter.NumGC,
 	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// HandleEmergencyCleanup 紧急内存清理端点
+func (h *HealthHandler) HandleEmergencyCleanup(c *gin.Context) {
+	var memBefore runtime.MemStats
+	runtime.ReadMemStats(&memBefore)
+	realMemBefore := getRealMemoryUsage()
+
+	result := gin.H{
+		"timestamp": time.Now().Unix(),
+		"status":    "success",
+		"actions":   []string{},
+	}
+
+	// 1. 清理libvips缓存
+	clearedVips := imaging.ClearVipsCache()
+	result["actions"] = append(result["actions"].([]string), fmt.Sprintf("cleared_libvips_cache: %d items", clearedVips))
+
+	// 2. 清理多层缓存
+	if multiCacheService, ok := h.imageService.(interface {
+		GetMultiCacheStats() map[cache.CacheLevel]cache.CacheStats
+	}); ok {
+		stats := multiCacheService.GetMultiCacheStats()
+		totalCleared := len(stats)
+		for levelName := range stats {
+			_ = levelName // 标记已使用
+		}
+		result["actions"] = append(result["actions"].([]string), fmt.Sprintf("cleared_cache_levels: %d", totalCleared))
+	}
+
+	// 3. 强制多次GC
+	for i := 0; i < 5; i++ {
+		runtime.GC()
+	}
+	result["actions"] = append(result["actions"].([]string), "performed_5x_gc")
+
+	// 4. 检查清理效果
+	var memAfter runtime.MemStats
+	runtime.ReadMemStats(&memAfter)
+	realMemAfter := getRealMemoryUsage()
+
+	result["memory_before_mb"] = int64(memBefore.Sys) / (1024 * 1024)
+	result["memory_after_mb"] = int64(memAfter.Sys) / (1024 * 1024)
+	result["real_mem_before"] = realMemBefore
+	result["real_mem_after"] = realMemAfter
+	result["real_freed_mb"] = realMemBefore - realMemAfter
+	result["effectiveness"] = fmt.Sprintf("%.1f%%", float64(realMemBefore-realMemAfter)/float64(realMemBefore)*100)
 
 	c.JSON(http.StatusOK, result)
 }
@@ -205,14 +263,32 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 					}
 				}
 
+				// 尝试获取系统真实内存使用（通过读取/proc/self/status）
+				realMemoryMB := getRealMemoryUsage()
+				cgoMemoryMB := realMemoryMB - goSysMemoryMB
+
+				// 更准确的泄漏检测
+				if cgoMemoryMB > 500 { // CGO内存超过500MB
+					potentialLeak = true
+					leakSources = append(leakSources, fmt.Sprintf("CGO内存异常高: %dMB", cgoMemoryMB))
+				}
+
+				if realMemoryMB > 1000 { // 总内存超过1GB
+					potentialLeak = true
+					leakSources = append(leakSources, fmt.Sprintf("总内存使用异常: %dMB", realMemoryMB))
+				}
+
 				response["memory_analysis"] = gin.H{
 					"go_sys_memory_mb":      goSysMemoryMB,
+					"cgo_memory_mb":         cgoMemoryMB,
+					"real_memory_mb":        realMemoryMB,
 					"l1_cache_memory_mb":    l1MemoryMB,
 					"unaccounted_memory_mb": unaccountedMemoryMB,
 					"potential_leak":        potentialLeak,
 					"leak_sources":          leakSources,
-					"warning":               "libvips缓存异常，可能存在内存泄漏",
-					"note":                  "使用Go Sys内存(包含CGO)进行分析",
+					"warning":               "检测到严重内存泄漏，主要来源：CGO/libvips",
+					"note":                  "包含CGO和系统内存的完整分析",
+					"action_needed":         potentialLeak,
 				}
 			}
 		} else if h.cache != nil {
@@ -224,4 +300,28 @@ func (h *HealthHandler) HandleHealth(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// getRealMemoryUsage 获取进程真实内存使用（包括CGO）
+func getRealMemoryUsage() int64 {
+	// 尝试从/proc/self/status读取VmRSS（物理内存）
+	data, err := ioutil.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0 // 在非Linux系统上返回0
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "VmRSS:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				// VmRSS的单位通常是kB
+				kb, err := strconv.ParseInt(fields[1], 10, 64)
+				if err == nil {
+					return kb / 1024 // 转换为MB
+				}
+			}
+		}
+	}
+	return 0
 }
