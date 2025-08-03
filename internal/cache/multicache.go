@@ -24,6 +24,10 @@ type MultiLevelCache struct {
 	// 统计和监控
 	stats map[CacheLevel]*LevelStats
 	mu    sync.RWMutex
+
+	// 后台同步任务控制
+	syncCancel context.CancelFunc
+	syncWG     sync.WaitGroup
 }
 
 // MultiCacheConfig 多层缓存配置
@@ -112,7 +116,10 @@ func NewMultiLevelCache(config *MultiCacheConfig) (*MultiLevelCache, error) {
 
 	// 启动后台同步任务
 	if config.SyncInterval > 0 {
-		go cache.backgroundSync(config.SyncInterval)
+		syncCtx, syncCancel := context.WithCancel(context.Background())
+		cache.syncCancel = syncCancel
+		cache.syncWG.Add(1)
+		go cache.backgroundSync(syncCtx, config.SyncInterval)
 	}
 
 	return cache, nil
@@ -311,6 +318,12 @@ func (m *MultiLevelCache) Clear(ctx context.Context, level CacheLevel) error {
 func (m *MultiLevelCache) Close() error {
 	var errors []error
 
+	// 停止后台同步任务
+	if m.syncCancel != nil {
+		m.syncCancel()
+		m.syncWG.Wait()
+	}
+
 	adapters := []CacheAdapter{m.l1Memory, m.l2Redis, m.l3Disk}
 	for _, adapter := range adapters {
 		if adapter != nil {
@@ -368,12 +381,19 @@ func (m *MultiLevelCache) promoteToHigherLevels(ctx context.Context, key string,
 	}
 }
 
-func (m *MultiLevelCache) backgroundSync(interval time.Duration) {
+func (m *MultiLevelCache) backgroundSync(ctx context.Context, interval time.Duration) {
+	defer m.syncWG.Done()
+
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		m.performSync()
+	for {
+		select {
+		case <-ticker.C:
+			m.performSync()
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 

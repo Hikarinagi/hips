@@ -23,6 +23,9 @@ func main() {
 		cfg.Concurrent.VipsCacheMem,
 	)
 
+	// 启动libvips缓存自动清理（每30分钟，当使用率>80%时清理）
+	imaging.StartAutoCleanup(30, 0.8)
+
 	var storageService service.StorageService
 	var imageService service.ImageService
 	var cacheService cache.CacheService
@@ -88,10 +91,18 @@ func main() {
 	log.Printf("Max queue size: %d", cfg.Concurrent.MaxQueueSize)
 
 	defer func() {
-		log.Println("Shutting down image service...")
+		log.Println("Shutting down services...")
+
+		// 停止libvips自动清理
+		imaging.StopAutoCleanup()
+
+		// 关闭图像服务
 		if err := imageService.Close(); err != nil {
 			log.Printf("Error closing image service: %v", err)
 		}
+
+		// 最后清理libvips缓存
+		imaging.ClearVipsCache()
 	}()
 
 	if err := srv.Start(cfg.Server.Port); err != nil {

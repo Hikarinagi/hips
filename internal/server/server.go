@@ -27,6 +27,11 @@ func NewServer(imageHandler *handler.ImageHandler, healthHandler *handler.Health
 }
 
 func (s *Server) SetupRoutes() {
+	// 管理端点
+	s.router.POST("/admin/cache/clear", s.healthHandler.HandleCacheClear)
+	s.router.POST("/admin/gc", s.healthHandler.HandleForceGC)
+
+	// 主要路由（最后设置，避免冲突）
 	s.router.GET("/*path", s.imageHandler.HandleRequest)
 }
 
