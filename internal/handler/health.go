@@ -109,16 +109,15 @@ func (h *HealthHandler) HandleEmergencyCleanup(c *gin.Context) {
 		stats := multiCacheService.GetMultiCacheStats()
 		totalCleared := len(stats)
 		for levelName := range stats {
-			_ = levelName // 标记已使用
+			_ = levelName
 		}
 		result["actions"] = append(result["actions"].([]string), fmt.Sprintf("cleared_cache_levels: %d", totalCleared))
 	}
 
-	// 3. 强制多次GC
-	for i := 0; i < 5; i++ {
-		runtime.GC()
-	}
-	result["actions"] = append(result["actions"].([]string), "performed_5x_gc")
+	// 3. 紧急GC清理（作为emergency，允许一定程度的强制性）
+	runtime.GC()
+	runtime.GC() // 双重GC以确保清理效果
+	result["actions"] = append(result["actions"].([]string), "performed_2x_gc")
 
 	// 4. 检查清理效果
 	var memAfter runtime.MemStats

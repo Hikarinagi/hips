@@ -5,6 +5,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"hips/pkg/imaging"
 )
@@ -30,6 +31,10 @@ type ConcurrentImageProcessor struct {
 	ctx           context.Context
 	cancel        context.CancelFunc
 	wg            sync.WaitGroup
+
+	// 温和的GC策略
+	processedCount int64
+	lastGCTime     int64
 }
 
 type ProcessorConfig struct {
@@ -84,15 +89,27 @@ func (p *ConcurrentImageProcessor) worker(id int) {
 	}
 }
 
+// tryGentleGC 温和的GC策略：仅在特定条件下触发GC
+func (p *ConcurrentImageProcessor) tryGentleGC() {
+	// 每处理100个任务，或者距离上次GC超过5分钟才考虑GC
+	count := atomic.AddInt64(&p.processedCount, 1)
+	now := time.Now().Unix()
+
+	if count%100 == 0 || (now-atomic.LoadInt64(&p.lastGCTime) > 300) {
+		// 检查当前活跃worker数量，避免在高负载时GC
+		if atomic.LoadInt32(&p.activeWorkers) <= int32(p.maxWorkers/2) {
+			runtime.GC()
+			atomic.StoreInt64(&p.lastGCTime, now)
+		}
+	}
+}
+
 func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
-	// 开始处理任务，增加活跃worker计数
 	atomic.AddInt32(&p.activeWorkers, 1)
 	defer func() {
-		atomic.AddInt32(&p.activeWorkers, -1) // 确保任务完成后减少计数
-
-		// 重要：清理可能的内存引用
+		atomic.AddInt32(&p.activeWorkers, -1)
 		task.ImageData = nil
-		runtime.GC() // 在高并发处理后强制GC
+		p.tryGentleGC()
 	}()
 
 	select {

@@ -17,7 +17,7 @@ import (
 // ConfigureVips 配置libvips的并发和缓存参数
 func ConfigureVips(concurrency, cacheSize, cacheMemMB int) {
 	if concurrency <= 0 {
-		concurrency = runtime.NumCPU() // 使用所有CPU核心
+		concurrency = runtime.NumCPU()
 	}
 	C.vips_concurrency_set(C.int(concurrency))
 
@@ -48,17 +48,19 @@ func GetVipsInfo() map[string]interface{} {
 func ClearVipsCache() int {
 	oldSize := int(C.vips_cache_get_size())
 
-	// 使用bimg提供的清理函数
 	bimg.VipsCacheDropAll()
 
 	newSize := int(C.vips_cache_get_size())
-	log.Printf("libvips cache cleared: %d -> %d items", oldSize, newSize)
+	cleared := oldSize - newSize
 
-	// 强制垃圾回收以释放Go侧的引用
-	runtime.GC()
-	runtime.GC()
+	log.Printf("libvips cache cleared: %d -> %d items (%d cleared)", oldSize, newSize, cleared)
 
-	return oldSize - newSize
+	// 温和的垃圾回收：只在确实清理了缓存时才GC
+	if cleared > 0 {
+		runtime.GC()
+	}
+
+	return cleared
 }
 
 // SetVipsCacheMax 动态调整libvips缓存大小
@@ -78,14 +80,13 @@ func StartAutoCleanup(intervalMinutes int, thresholdPercent float64) {
 	cleanupMutex.Lock()
 	defer cleanupMutex.Unlock()
 
-	// 停止之前的清理任务
 	StopAutoCleanup()
 
 	if intervalMinutes <= 0 {
-		intervalMinutes = 30 // 默认30分钟
+		intervalMinutes = 30
 	}
 	if thresholdPercent <= 0 {
-		thresholdPercent = 0.8 // 默认80%
+		thresholdPercent = 0.8
 	}
 
 	cleanupTicker = time.NewTicker(time.Duration(intervalMinutes) * time.Minute)
@@ -95,21 +96,21 @@ func StartAutoCleanup(intervalMinutes int, thresholdPercent float64) {
 		for {
 			select {
 			case <-cleanupTicker.C:
-				// 检查缓存使用率
 				cacheSize := int(C.vips_cache_get_size())
 				cacheMax := int(C.vips_cache_get_max())
 
 				if cacheMax > 0 {
 					usagePercent := float64(cacheSize) / float64(cacheMax)
-					// 更积极的清理策略：50%就开始清理
-					if usagePercent >= 0.5 || cacheSize >= cacheMax {
+					// 温和的清理策略：70%开始清理，或者满了就必须清理
+					if usagePercent >= 0.7 || cacheSize >= cacheMax {
 						cleared := ClearVipsCache()
-						log.Printf("Auto-cleared libvips cache: %d items (usage was %.1f%%, threshold: %.1f%%)",
-							cleared, usagePercent*100, thresholdPercent*100)
+						log.Printf("Auto-cleared libvips cache: %d items (usage was %.1f%%)",
+							cleared, usagePercent*100)
 
-						// 强制GC
-						runtime.GC()
-						runtime.GC() // 两次GC确保释放
+						// 温和的GC策略：只在清理了足够多缓存时才GC
+						if cleared > 50 {
+							runtime.GC()
+						}
 					}
 				}
 

@@ -55,7 +55,6 @@ func processImageInternal(imageData []byte, params ImageParams) (ProcessResult, 
 
 	shouldResize := true
 
-	// 判断是否需要处理
 	if params.Width > 0 && params.Height == 0 {
 		if params.Width >= originalWidth {
 			shouldResize = false
@@ -133,8 +132,8 @@ func processImageInternal(imageData []byte, params ImageParams) (ProcessResult, 
 		return ProcessResult{}, fmt.Errorf("failed to process image: %w", err)
 	}
 
-	// 强制GC以释放可能的CGO内存引用
-	imageData = nil // 释放引用
+	// 释放CGO内存引用
+	imageData = nil
 
 	return ProcessResult{
 		Data:          outputData,
