@@ -46,19 +46,15 @@ func GetVipsInfo() map[string]interface{} {
 
 // ClearVipsCache 清理libvips缓存
 func ClearVipsCache() int {
+	cleanupMutex.Lock()
+	defer cleanupMutex.Unlock()
+
 	oldSize := int(C.vips_cache_get_size())
-
 	bimg.VipsCacheDropAll()
-
 	newSize := int(C.vips_cache_get_size())
 	cleared := oldSize - newSize
 
 	log.Printf("libvips cache cleared: %d -> %d items (%d cleared)", oldSize, newSize, cleared)
-
-	// 温和的垃圾回收：只在确实清理了缓存时才GC
-	if cleared > 0 {
-		runtime.GC()
-	}
 
 	return cleared
 }
@@ -106,11 +102,6 @@ func StartAutoCleanup(intervalMinutes int, thresholdPercent float64) {
 						cleared := ClearVipsCache()
 						log.Printf("Auto-cleared libvips cache: %d items (usage was %.1f%%)",
 							cleared, usagePercent*100)
-
-						// 温和的GC策略：只在清理了足够多缓存时才GC
-						if cleared > 50 {
-							runtime.GC()
-						}
 					}
 				}
 

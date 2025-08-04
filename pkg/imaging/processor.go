@@ -126,14 +126,10 @@ func processImageInternal(imageData []byte, params ImageParams) (ProcessResult, 
 		}
 	}
 
-	// 处理图像，bimg内部会自动管理内存
 	outputData, err := bimg.NewImage(imageData).Process(options)
 	if err != nil {
 		return ProcessResult{}, fmt.Errorf("failed to process image: %w", err)
 	}
-
-	// 释放CGO内存引用
-	imageData = nil
 
 	return ProcessResult{
 		Data:          outputData,

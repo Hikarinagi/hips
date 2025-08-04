@@ -35,6 +35,7 @@ type ConcurrentImageProcessor struct {
 	// 温和的GC策略
 	processedCount int64
 	lastGCTime     int64
+	gcMutex        sync.Mutex
 }
 
 type ProcessorConfig struct {
@@ -91,15 +92,20 @@ func (p *ConcurrentImageProcessor) worker(id int) {
 
 // tryGentleGC 温和的GC策略：仅在特定条件下触发GC
 func (p *ConcurrentImageProcessor) tryGentleGC() {
-	// 每处理100个任务，或者距离上次GC超过5分钟才考虑GC
 	count := atomic.AddInt64(&p.processedCount, 1)
 	now := time.Now().Unix()
 
 	if count%100 == 0 || (now-atomic.LoadInt64(&p.lastGCTime) > 300) {
-		// 检查当前活跃worker数量，避免在高负载时GC
 		if atomic.LoadInt32(&p.activeWorkers) <= int32(p.maxWorkers/2) {
-			runtime.GC()
-			atomic.StoreInt64(&p.lastGCTime, now)
+			// 使用互斥锁防止并发GC调用
+			if p.gcMutex.TryLock() {
+				defer p.gcMutex.Unlock()
+				// 再次检查时间，避免重复GC
+				if now-atomic.LoadInt64(&p.lastGCTime) > 60 {
+					runtime.GC()
+					atomic.StoreInt64(&p.lastGCTime, now)
+				}
+			}
 		}
 	}
 }
@@ -109,7 +115,10 @@ func (p *ConcurrentImageProcessor) processTask(task ProcessTask, workerID int) {
 	defer func() {
 		atomic.AddInt32(&p.activeWorkers, -1)
 		task.ImageData = nil
-		p.tryGentleGC()
+		// 只在特定worker上尝试GC，减少竞争
+		if workerID == 0 {
+			p.tryGentleGC()
+		}
 	}()
 
 	select {
