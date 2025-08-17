@@ -107,4 +107,4 @@ GET /health
 
 ## 许可证
 
-MIT License
+AGPL-3.0
