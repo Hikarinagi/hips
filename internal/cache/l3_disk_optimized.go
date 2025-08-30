@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -159,11 +160,11 @@ func (d *L3DiskAdapterOptimized) Set(ctx context.Context, key string, value inte
 	case []byte:
 		data = v
 		contentType = "application/octet-stream"
-		isOriginal = filepath.Base(key) == "raw_"+key
+		isOriginal = strings.HasPrefix(key, "raw_")
 	case CachedImage:
 		data = v.Data
 		contentType = v.ContentType
-		isOriginal = filepath.Base(key) == "raw_"+key
+		isOriginal = strings.HasPrefix(key, "raw_")
 	default:
 		return fmt.Errorf("unsupported value type for disk cache")
 	}
