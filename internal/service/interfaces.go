@@ -40,6 +40,7 @@ type StorageService interface {
 
 type ImageService interface {
 	ProcessImageRequest(imagePath string, params imaging.ImageParams) (ProcessResult, error)
+	ProcessThirdPartyRequest(provider string, remoteURL string, params imaging.ImageParams) (ProcessResult, error)
 	ProcessBatch(ctx context.Context, request BatchProcessRequest) (BatchProcessResult, error)
 	Close() error
 	GetProcessorStats() concurrent.ProcessorStats

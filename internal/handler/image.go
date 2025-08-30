@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -30,6 +31,17 @@ func (h *ImageHandler) HandleRequest(c *gin.Context) {
 	if imagePath == "health" {
 		h.healthHandler.HandleHealth(c)
 		return
+	}
+
+	// 检测第三方路径: /:provider/:remoteURL
+	tokens := strings.SplitN(imagePath, "/", 2)
+	if len(tokens) == 2 {
+		provider := tokens[0]
+		rawURL, _ := url.PathUnescape(tokens[1])
+		if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
+			h.HandleThirdParty(c, provider, rawURL)
+			return
+		}
 	}
 
 	h.HandleImageProxy(c, imagePath)
@@ -85,5 +97,34 @@ func (h *ImageHandler) HandleImageProxy(c *gin.Context, imagePath string) {
 		c.Header("X-Resize-Skipped", "false")
 	}
 
+	c.Data(http.StatusOK, result.ContentType, result.Data)
+}
+
+func (h *ImageHandler) HandleThirdParty(c *gin.Context, provider, remoteURL string) {
+	params := imaging.ParseImageParams(c.Request.URL.Query())
+	result, err := h.imageService.ProcessThirdPartyRequest(provider, remoteURL, params)
+	if err != nil {
+		if strings.Contains(err.Error(), "unknown provider") || strings.Contains(err.Error(), "host not allowed") {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		if strings.Contains(err.Error(), "remote status") || strings.Contains(err.Error(), "invalid remote url") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		log.Printf("Error processing third-party image: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "image processing failed"})
+		return
+	}
+
+	c.Header("Cache-Control", "public, max-age=31536000")
+	c.Header("X-Total-Time", result.Timings.TotalTime.String())
+	c.Header("X-Network-Time", result.Timings.NetworkTime.String())
+	c.Header("X-Processing-Time", result.Timings.ProcessingTime.String())
+	if result.Timings.ResizeSkipped {
+		c.Header("X-Resize-Skipped", "true")
+	} else {
+		c.Header("X-Resize-Skipped", "false")
+	}
 	c.Data(http.StatusOK, result.ContentType, result.Data)
 }

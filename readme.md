@@ -54,6 +54,7 @@ brew install vips (For MacOS)
 | `CACHE_PROMOTE_THRESHOLD` | 缓存提升访问次数阈值 | `3` | ❌ |
 | `CACHE_DEMOTE_THRESHOLD` | 缓存降级访问次数阈值 | `1` | ❌ |
 | `CACHE_SYNC_INTERVAL` | 缓存同步间隔 | `5m` | ❌ |
+| `THIRD_PARTY_PROVIDERS_JSON` | 第三方图片提供方列表(JSON数组) | - | ❌ |
 
 ### 构建和运行
 
@@ -87,6 +88,27 @@ GET /{图片路径}?参数
 ```
 http://localhost:8080/path/to/image.jpg?w=300&h=200&q=85&f=webp&blur=2
 ```
+
+### 第三方图片处理
+
+通过配置第三方提供方后，可以直接请求远程图片地址：
+
+1) 配置环境变量（注意JSON需使用双引号）：
+
+```bash
+export THIRD_PARTY_PROVIDERS_JSON='[{"name":"bangumi","allowed_hosts":["lain.bgm.tv"]}]'
+```
+
+2) 请求示例：
+
+```http
+GET /bangumi/https%3A%2F%2Flain.bgm.tv%2Fpic%2Fcover%2Fl%2F1c%2Fba%2F343241_TWFSN.jpg?w=600&h=400&f=avif&q=85
+```
+
+说明：
+- 第一路径段为 `provider` 名称，对应 `name`
+- 第二段为远程图片完整URL，建议URL编码；服务端也会尝试解码
+- 仅当URL的 `host` 在对应 `allowed_hosts` 白名单中时才会拉取
 
 ### 健康检查
 
