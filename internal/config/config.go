@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -15,6 +16,7 @@ type Config struct {
 	MultiCache MultiCacheConfig
 	Concurrent ConcurrentConfig
 	Network    NetworkConfig
+	ThirdParty []ThirdPartyProvider
 }
 
 type ServerConfig struct {
@@ -80,6 +82,12 @@ type NetworkConfig struct {
 	IdleConnTimeout     time.Duration `json:"idle_conn_timeout"`
 	RequestTimeout      time.Duration `json:"request_timeout"`
 	DisableCompression  bool          `json:"disable_compression"`
+}
+
+// ThirdPartyProvider 外部图片提供方配置
+type ThirdPartyProvider struct {
+	Name         string   `json:"name"`
+	AllowedHosts []string `json:"allowed_hosts"`
 }
 
 const (
@@ -190,6 +198,15 @@ func Load() (*Config, error) {
 
 	if len(missingVars) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %v", missingVars)
+	}
+
+	// 解析第三方提供方配置（JSON数组）
+	if jsonStr := os.Getenv("THIRD_PARTY_PROVIDERS_JSON"); jsonStr != "" {
+		var providers []ThirdPartyProvider
+		if err := json.Unmarshal([]byte(jsonStr), &providers); err != nil {
+			return nil, fmt.Errorf("invalid THIRD_PARTY_PROVIDERS_JSON: %w", err)
+		}
+		config.ThirdParty = providers
 	}
 
 	return config, nil

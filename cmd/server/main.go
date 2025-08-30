@@ -64,6 +64,10 @@ func main() {
 				log.Fatal("Failed to create storage service with multi-cache:", err)
 			}
 			imageService = service.NewImageServiceWithMultiCache(storageService, multiCache, cfg.Concurrent)
+			// 注入第三方providers
+			if impl, ok := imageService.(*service.ImageServiceImpl); ok {
+				impl.WithThirdPartyProviders(cfg.ThirdParty, cfg.Network)
+			}
 			log.Printf("Multi-level cache enabled - L1: %v, L2: %v, L3: %v",
 				cfg.MultiCache.L1Enabled, cfg.MultiCache.L2Enabled, cfg.MultiCache.L3Enabled)
 		}
@@ -75,6 +79,9 @@ func main() {
 			log.Fatal("Failed to create storage service:", err)
 		}
 		imageService = service.NewImageService(storageService, cacheService, cfg.Concurrent)
+		if impl, ok := imageService.(*service.ImageServiceImpl); ok {
+			impl.WithThirdPartyProviders(cfg.ThirdParty, cfg.Network)
+		}
 		log.Println("Using traditional single-level cache")
 	}
 
