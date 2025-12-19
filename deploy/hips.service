@@ -37,6 +37,8 @@ LimitNPROC=4096
 
 # Memory limit (adjust based on your server)
 # MemoryMax=4G
+# Time-based restart: restart after running for 24 hours
+# RuntimeMaxSec=86400
 
 # Logging
 StandardOutput=journal
