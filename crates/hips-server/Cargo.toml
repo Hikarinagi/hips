@@ -1,0 +1,36 @@
+[package]
+name = "hips-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "hips"
+path = "src/main.rs"
+
+[dependencies]
+hips-core.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "sync", "time"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["trace"] }
+bytes = "1"
+object_store = { version = "0.14", features = ["aws"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "stream"] }
+moka = { version = "0.12", features = ["future"] }
+rayon = "1"
+url = "2"
+percent-encoding = "2"
+libvips = "2.3"
+libavif = { version = "0.14", default-features = false, features = ["codec-aom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+futures-util = "0.3"
+
+[build-dependencies]
+pkg-config = "0.3"
