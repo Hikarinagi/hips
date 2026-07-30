@@ -14,7 +14,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev nasm
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Test workspace
