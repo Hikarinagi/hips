@@ -42,7 +42,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 
 FROM build AS test
-RUN cargo fmt --all --check \
+RUN rustup component add rustfmt \
+    && cargo fmt --all --check \
     && cargo test --workspace --locked
 
 FROM build AS binary
