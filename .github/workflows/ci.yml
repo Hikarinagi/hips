@@ -13,9 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install libvips
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libvips-dev nasm
-      - name: Check formatting
-        run: cargo fmt --all --check
-      - name: Test workspace
-        run: cargo test --workspace --locked
+      - uses: docker/setup-buildx-action@v3
+      - name: Test against the production libvips build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          push: false
+          cache-from: type=gha,scope=hips-test
+          cache-to: type=gha,mode=max,scope=hips-test

@@ -40,6 +40,12 @@ WORKDIR /build
 ARG APP_VERSION=dev
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+
+FROM build AS test
+RUN cargo fmt --all --check \
+    && cargo test --workspace --locked
+
+FROM build AS binary
 RUN cargo build --release --bin hips
 
 FROM debian:bookworm-slim
@@ -52,9 +58,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin hips
 
-COPY --from=build /usr/local/lib/libvips.so* /usr/local/lib/libhwy*.so* /usr/local/lib/
+COPY --from=binary /usr/local/lib/libvips.so* /usr/local/lib/libhwy*.so* /usr/local/lib/
 RUN ldconfig
-COPY --from=build /build/target/release/hips /usr/local/bin/hips
+COPY --from=binary /build/target/release/hips /usr/local/bin/hips
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN mkdir -p /var/cache/hips && chown hips:hips /var/cache/hips
