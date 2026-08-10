@@ -4,7 +4,7 @@ ARG FACE_MODEL_REVISION=784dc4c0bb692351ddcdbe6131a050b17d3025d5
 ARG FACE_MODEL_FILE=face_detect_v1.4_n/model.onnx
 ARG FACE_MODEL_SHA256=fd860b650a4377046842c3cd80d01b0b408bdfbdb4acee5759630f82c6ef04a9
 
-FROM rust:1.95-bookworm AS build
+FROM rust:1.95-trixie AS build
 ARG VIPS_VERSION
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -65,12 +65,12 @@ RUN cargo build --release --bin hips \
     && touch /opt/ort/.keep \
     && find target/release -maxdepth 2 -name 'libonnxruntime*.so*' -exec cp -a {} /opt/ort/ \;
 
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libglib2.0-0 libexpat1 \
         libjpeg62-turbo libpng16-16 libwebp7 libwebpdemux2 libwebpmux3 \
-        libexif12 liblcms2-2 libheif1 \
+        libexif12 liblcms2-2 libheif1 libstdc++6 \
         libjemalloc2 ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin hips

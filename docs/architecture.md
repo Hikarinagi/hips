@@ -91,6 +91,12 @@ largest box above `FACE_THRESHOLD` wins; NMS is skipped because duplicate boxes 
 differ by ~2% of face width, well under the placement precision that matters. ONNX Runtime links
 statically, so the runtime image gains only the 12 MB model.
 
+The prebuilt ONNX Runtime `ort` downloads is compiled against glibc ≥ 2.38 and libstdc++ from
+GCC ≥ 13, which is **why both Docker stages are on Debian trixie**. On bookworm (glibc 2.36,
+GCC 12) the link fails with `undefined symbol: __isoc23_strtol` and
+`basic_string::_M_replace_cold`. Do not move the base image back without either dropping the
+prebuilt (`ORT_LIB_LOCATION` pointing at a portable ONNX Runtime build) or removing detection.
+
 ORT's `Session::run` takes `&mut self`, so a session cannot be shared; `FaceDetector` holds a pool
 of `FACE_SESSIONS` of them behind a `Mutex<Vec<Session>>` + `Condvar`, handed out through a
 `Lease` that returns the session on drop (including on panic). Pool size defaults to half the
