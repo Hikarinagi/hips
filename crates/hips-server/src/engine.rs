@@ -1,4 +1,4 @@
-use hips_core::{Codec, ImageParams, Interest, Plan, Rgba};
+use hips_core::{Codec, Focus, ImageParams, Interest, Plan, Rgba};
 use libvips::ops::{
     Angle, EmbedOptions, Extend, FlattenOptions, ForeignKeep, GammaOptions, Interesting,
     Interpretation, JpegsaveBufferOptions, LinearOptions, PngsaveBufferOptions, SharpenOptions,
@@ -71,6 +71,7 @@ impl Engine {
         src: &[u8],
         params: &ImageParams,
         codec: Codec,
+        focus: Option<Focus>,
     ) -> Result<Transformed, EngineError> {
         let probe = VipsImage::new_from_buffer(src, "").map_err(|_| EngineError::Decode)?;
         let src_w = probe.get_width().max(0) as u64;
@@ -85,7 +86,7 @@ impl Engine {
             });
         }
 
-        let plan = params.plan(src_w as u32, src_h as u32);
+        let plan = params.plan(src_w as u32, src_h as u32, focus);
         self.run(src, &plan, params, codec)
             .map_err(|()| self.vips_err())
     }
@@ -453,6 +454,7 @@ mod tests {
                 &src,
                 &params(&[("w", "20"), ("h", "20"), ("fit", "cover"), ("f", "webp")]),
                 Codec::Webp,
+                None,
             )
             .expect("cover webp");
         assert_eq!(cover.codec, Codec::Webp);
@@ -463,6 +465,7 @@ mod tests {
                 &src,
                 &params(&[("w", "24"), ("h", "24"), ("fit", "cover"), ("f", "avif")]),
                 Codec::Avif,
+                None,
             )
             .expect("cover avif");
         assert_eq!(avif.codec, Codec::Avif);
@@ -473,6 +476,7 @@ mod tests {
                 &src,
                 &params(&[("w", "200"), ("fit", "scale-down"), ("f", "png")]),
                 Codec::Png,
+                None,
             )
             .expect("scale-down png");
         assert_eq!(dimensions(&scaled_down.bytes).0, 40);
@@ -482,6 +486,7 @@ mod tests {
                 &src,
                 &params(&[("w", "32"), ("h", "32"), ("fit", "contain"), ("f", "jpeg")]),
                 Codec::Jpeg,
+                None,
             )
             .expect("contain jpeg");
         let (cw, ch) = dimensions(&contain.bytes);
@@ -492,6 +497,7 @@ mod tests {
                 &src,
                 &params(&[("w", "44"), ("h", "44"), ("fit", "pad"), ("f", "png")]),
                 Codec::Png,
+                None,
             )
             .expect("pad png");
         assert_eq!(dimensions(&padded.bytes), (44, 44));
@@ -506,13 +512,14 @@ mod tests {
                     ("gravity", "top"),
                 ]),
                 Codec::Webp,
+                None,
             )
             .expect("directional cover");
         assert_eq!(dimensions(&directional.bytes), (30, 10));
 
         let oversized = srgb_png(64, 48);
         let err = engine
-            .process(&oversized, &params(&[("w", "10")]), Codec::Png)
+            .process(&oversized, &params(&[("w", "10")]), Codec::Png, None)
             .unwrap_err();
         assert!(matches!(err, EngineError::SourceTooLarge { .. }));
     }

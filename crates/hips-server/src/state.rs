@@ -7,6 +7,7 @@ use object_store::ObjectStore;
 use crate::cache::ResultCache;
 use crate::config::Config;
 use crate::engine::Engine;
+use crate::face::{FaceCache, FaceDetector};
 use crate::source_cache::SourceCache;
 use crate::worker::WorkerPool;
 
@@ -16,6 +17,8 @@ pub struct Metrics {
     pub cache_hits: AtomicU64,
     pub errors: AtomicU64,
     pub bytes_out: AtomicU64,
+    pub face_detections: AtomicU64,
+    pub face_misses: AtomicU64,
 }
 
 pub struct Inner {
@@ -24,6 +27,8 @@ pub struct Inner {
     pub http: reqwest::Client,
     pub cache: ResultCache,
     pub source_cache: SourceCache,
+    pub face: Option<Arc<FaceDetector>>,
+    pub face_cache: FaceCache,
     pub worker: WorkerPool,
     pub config: Config,
     pub metrics: Metrics,

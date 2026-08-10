@@ -2,12 +2,14 @@ mod cache;
 mod config;
 mod engine;
 mod error;
+mod face;
 mod handler;
 mod net;
 mod source_cache;
 mod state;
 mod worker;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::routing::get;
@@ -19,6 +21,7 @@ use tracing_subscriber::EnvFilter;
 use crate::cache::ResultCache;
 use crate::config::Config;
 use crate::engine::{EncodeConfig, Engine};
+use crate::face::{FaceCache, FaceDetector};
 use crate::source_cache::SourceCache;
 use crate::state::{AppState, Inner, Metrics};
 use crate::worker::WorkerPool;
@@ -27,7 +30,7 @@ use crate::worker::WorkerPool;
 async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,ort=warn")),
         )
         .init();
 
@@ -64,6 +67,8 @@ async fn main() {
     let worker = WorkerPool::new(config.workers, config.max_queue);
     let cache = ResultCache::new(config.result_cache_bytes, config.result_cache_ttl);
     let source_cache = SourceCache::new(config.source_cache_dir.clone(), config.source_cache_bytes);
+    let face = load_face_detector(&config);
+    let face_cache = FaceCache::new(config.face_cache_entries, config.face_cache_ttl);
     let bind = config.bind.clone();
 
     tracing::info!(
@@ -75,6 +80,7 @@ async fn main() {
             .capacity()
             .map(|b| b / (1024 * 1024 * 1024))
             .unwrap_or(0),
+        face_detection = face.is_some(),
         "hips configured"
     );
 
@@ -84,6 +90,8 @@ async fn main() {
         http,
         cache,
         source_cache,
+        face,
+        face_cache,
         worker,
         config,
         metrics: Metrics::default(),
@@ -111,6 +119,40 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server error");
+}
+
+fn load_face_detector(config: &Config) -> Option<Arc<FaceDetector>> {
+    let path = config.face_model.as_deref()?;
+    let path = Path::new(path);
+    if !path.is_file() {
+        tracing::info!(
+            path = %path.display(),
+            "face model not found, gravity=face falls back to top anchor"
+        );
+        return None;
+    }
+    match FaceDetector::load(
+        path,
+        config.face_infer_size,
+        config.face_threshold,
+        config.face_threads,
+        config.face_sessions,
+    ) {
+        Ok(detector) => {
+            tracing::info!(
+                path = %path.display(),
+                infer_size = config.face_infer_size,
+                threshold = config.face_threshold,
+                sessions = config.face_sessions,
+                "face detector loaded"
+            );
+            Some(Arc::new(detector))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "face detector disabled");
+            None
+        }
+    }
 }
 
 fn build_storage(

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::color::Rgba;
-use crate::fit::{self, FitMode, Gravity, Plan};
+use crate::fit::{self, FitMode, Focus, Gravity, Plan};
 use crate::format::OutputFormat;
 
 pub const DEFAULT_QUALITY: u8 = 85;
@@ -141,7 +141,7 @@ impl ImageParams {
         }
     }
 
-    pub fn plan(&self, src_w: u32, src_h: u32) -> Plan {
+    pub fn plan(&self, src_w: u32, src_h: u32, focus: Option<Focus>) -> Plan {
         fit::plan(
             src_w,
             src_h,
@@ -149,7 +149,15 @@ impl ImageParams {
             self.height,
             self.fit,
             self.gravity,
+            focus,
         )
+    }
+
+    pub fn needs_focus(&self) -> bool {
+        self.gravity == Gravity::Face
+            && matches!(self.fit, FitMode::Cover | FitMode::Crop)
+            && self.width.is_some()
+            && self.height.is_some()
     }
 
     pub fn has_color_ops(&self) -> bool {
@@ -208,6 +216,17 @@ mod tests {
         assert_eq!(p.quality, 90);
         assert_eq!(p.format, OutputFormat::Webp);
         assert_eq!(p.fit, FitMode::Cover);
+    }
+
+    #[test]
+    fn needs_focus_only_for_face_gravity_crops() {
+        let card = parse(&[("w", "150"), ("h", "150"), ("fit", "cover"), ("g", "face")]);
+        assert!(card.needs_focus());
+
+        assert!(parse(&[("w", "150"), ("h", "150"), ("fit", "crop"), ("g", "face")]).needs_focus());
+        assert!(!parse(&[("w", "150"), ("h", "150"), ("fit", "cover")]).needs_focus());
+        assert!(!parse(&[("w", "150"), ("fit", "cover"), ("g", "face")]).needs_focus());
+        assert!(!parse(&[("w", "150"), ("h", "150"), ("g", "face")]).needs_focus());
     }
 
     #[test]

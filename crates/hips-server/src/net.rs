@@ -15,6 +15,15 @@ pub enum Source {
     Remote { url: String },
 }
 
+impl Source {
+    pub fn identity(&self) -> String {
+        match self {
+            Source::R2(key) => format!("r2:{key}"),
+            Source::Remote { url } => format!("tp:{url}"),
+        }
+    }
+}
+
 pub fn classify(path: &str, providers: &[Provider]) -> Result<Source, AppError> {
     let trimmed = path.trim_start_matches('/');
     if trimmed.is_empty() {
@@ -67,17 +76,18 @@ fn restore_scheme(value: &str) -> String {
 }
 
 pub async fn fetch_source(state: &AppState, source: &Source) -> Result<Bytes, AppError> {
+    let identity = source.identity();
     match source {
         Source::R2(key) => {
             state
                 .source_cache
-                .get(&format!("r2:{key}"), || fetch_r2(state, key))
+                .get(&identity, || fetch_r2(state, key))
                 .await
         }
         Source::Remote { url } => {
             state
                 .source_cache
-                .get(&format!("tp:{url}"), || fetch_remote(state, url))
+                .get(&identity, || fetch_remote(state, url))
                 .await
         }
     }

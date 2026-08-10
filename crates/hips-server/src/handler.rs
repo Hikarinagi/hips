@@ -10,13 +10,14 @@ use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use bytes::Bytes;
-use hips_core::{Accept, Codec, ImageParams, OutputFormat};
+use hips_core::{Accept, Codec, Focus, ImageParams, OutputFormat};
 use serde_json::json;
 
 use crate::cache::{Rendered, Timing};
 use crate::error::AppError;
 use crate::net::{classify, fetch_source, Source};
 use crate::state::AppState;
+use crate::worker::WorkerError;
 
 pub async fn image(
     State(state): State<AppState>,
@@ -66,14 +67,15 @@ async fn produce(
     let fetch_us = t_fetch.elapsed().as_micros() as u64;
 
     let codec = params.format.resolve(Codec::from_magic(&src_bytes), accept);
+    let t_proc = Instant::now();
+    let focus = focus_for(state, source, params, &src_bytes).await;
     let engine = state.engine.clone();
     let params = params.clone();
     let bytes = src_bytes;
 
-    let t_proc = Instant::now();
     let out = state
         .worker
-        .run(move || engine.process(&bytes, &params, codec))
+        .run(move || engine.process(&bytes, &params, codec, focus))
         .await??;
     let process_us = t_proc.elapsed().as_micros() as u64;
     Ok(Arc::new(Rendered {
@@ -84,6 +86,34 @@ async fn produce(
             process_us,
         },
     }))
+}
+
+async fn focus_for(
+    state: &AppState,
+    source: &Source,
+    params: &ImageParams,
+    src: &Bytes,
+) -> Option<Focus> {
+    if !params.needs_focus() {
+        return None;
+    }
+    let detector = state.face.clone()?;
+    let bytes = src.clone();
+    let owner = state.clone();
+    state
+        .face_cache
+        .resolve(source.identity(), async move {
+            owner
+                .metrics
+                .face_detections
+                .fetch_add(1, Ordering::Relaxed);
+            let focus = owner.worker.run(move || detector.detect(&bytes)).await?;
+            if focus.is_none() {
+                owner.metrics.face_misses.fetch_add(1, Ordering::Relaxed);
+            }
+            Ok::<Option<Focus>, WorkerError>(focus)
+        })
+        .await
 }
 
 fn render(rendered: &Rendered, params: &ImageParams, hit: bool) -> Response {
@@ -111,11 +141,12 @@ fn render(rendered: &Rendered, params: &ImageParams, hit: bool) -> Response {
 }
 
 fn cache_key(source: &Source, params: &ImageParams, accept: &Accept) -> String {
-    let src = match source {
-        Source::R2(key) => format!("r2:{key}"),
-        Source::Remote { url } => format!("tp:{url}"),
-    };
-    format!("{src}|{}|{}", param_sig(params), fmt_tag(params, accept))
+    format!(
+        "{}|{}|{}",
+        source.identity(),
+        param_sig(params),
+        fmt_tag(params, accept)
+    )
 }
 
 fn param_sig(p: &ImageParams) -> String {
@@ -158,12 +189,16 @@ pub async fn metrics(State(state): State<AppState>) -> Response {
             "# TYPE hips_cache_hits_total counter\nhips_cache_hits_total {}\n",
             "# TYPE hips_errors_total counter\nhips_errors_total {}\n",
             "# TYPE hips_bytes_out_total counter\nhips_bytes_out_total {}\n",
+            "# TYPE hips_face_detections_total counter\nhips_face_detections_total {}\n",
+            "# TYPE hips_face_misses_total counter\nhips_face_misses_total {}\n",
             "# TYPE hips_inflight gauge\nhips_inflight {}\n",
         ),
         m.requests.load(Ordering::Relaxed),
         m.cache_hits.load(Ordering::Relaxed),
         m.errors.load(Ordering::Relaxed),
         m.bytes_out.load(Ordering::Relaxed),
+        m.face_detections.load(Ordering::Relaxed),
+        m.face_misses.load(Ordering::Relaxed),
         state.worker.inflight(),
     );
     ([(header::CONTENT_TYPE, "text/plain; version=0.0.4")], body).into_response()

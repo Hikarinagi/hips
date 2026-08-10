@@ -1,4 +1,8 @@
 ARG VIPS_VERSION=8.18.3
+ARG FACE_MODEL_REPO=deepghs/anime_face_detection
+ARG FACE_MODEL_REVISION=784dc4c0bb692351ddcdbe6131a050b17d3025d5
+ARG FACE_MODEL_FILE=face_detect_v1.4_n/model.onnx
+ARG FACE_MODEL_SHA256=fd860b650a4377046842c3cd80d01b0b408bdfbdb4acee5759630f82c6ef04a9
 
 FROM rust:1.95-bookworm AS build
 ARG VIPS_VERSION
@@ -36,6 +40,15 @@ RUN curl -fsSL "https://github.com/libvips/libvips/releases/download/v${VIPS_VER
     && meson install -C build \
     && ldconfig
 
+ARG FACE_MODEL_REPO
+ARG FACE_MODEL_REVISION
+ARG FACE_MODEL_FILE
+ARG FACE_MODEL_SHA256
+RUN mkdir -p /opt/hips \
+    && curl -fsSL -o /opt/hips/face.onnx \
+         "https://huggingface.co/${FACE_MODEL_REPO}/resolve/${FACE_MODEL_REVISION}/${FACE_MODEL_FILE}" \
+    && echo "${FACE_MODEL_SHA256}  /opt/hips/face.onnx" | sha256sum -c -
+
 WORKDIR /build
 ARG APP_VERSION=dev
 COPY Cargo.toml Cargo.lock ./
@@ -47,7 +60,10 @@ RUN rustup component add rustfmt \
     && cargo test --workspace --locked
 
 FROM build AS binary
-RUN cargo build --release --bin hips
+RUN cargo build --release --bin hips \
+    && mkdir -p /opt/ort \
+    && touch /opt/ort/.keep \
+    && find target/release -maxdepth 2 -name 'libonnxruntime*.so*' -exec cp -a {} /opt/ort/ \;
 
 FROM debian:bookworm-slim
 RUN apt-get update \
@@ -60,8 +76,10 @@ RUN apt-get update \
     && useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin hips
 
 COPY --from=binary /usr/local/lib/libvips.so* /usr/local/lib/libhwy*.so* /usr/local/lib/
+COPY --from=binary /opt/ort/ /usr/local/lib/
 RUN ldconfig
 COPY --from=binary /build/target/release/hips /usr/local/bin/hips
+COPY --from=binary /opt/hips/face.onnx /usr/local/share/hips/face.onnx
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 RUN mkdir -p /var/cache/hips && chown hips:hips /var/cache/hips
@@ -69,7 +87,7 @@ RUN mkdir -p /var/cache/hips && chown hips:hips /var/cache/hips
 ENV PORT=8080 \
     HOST=0.0.0.0 \
     MALLOC_ARENA_MAX=2 \
-    RUST_LOG=info
+    RUST_LOG=info,ort=warn
 
 USER hips
 EXPOSE 8080

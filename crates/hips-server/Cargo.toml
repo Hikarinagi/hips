@@ -26,6 +26,7 @@ url = "2"
 percent-encoding = "2"
 libvips = "2.3"
 libavif = { version = "0.14", default-features = false, features = ["codec-aom"] }
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "tracing", "download-binaries", "tls-rustls", "copy-dylibs", "api-27"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"

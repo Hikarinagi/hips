@@ -37,6 +37,13 @@ pub struct Config {
     pub avif_effort: i32,
     pub png_compression: i32,
     pub allow_private_remote: bool,
+    pub face_model: Option<String>,
+    pub face_infer_size: i32,
+    pub face_threshold: f32,
+    pub face_threads: usize,
+    pub face_sessions: usize,
+    pub face_cache_entries: u64,
+    pub face_cache_ttl: Duration,
 }
 
 impl Config {
@@ -93,6 +100,22 @@ impl Config {
             avif_effort: parse_env::<i32>("AVIF_EFFORT").unwrap_or(1).clamp(0, 9),
             png_compression: parse_env::<i32>("PNG_COMPRESSION").unwrap_or(6).clamp(0, 9),
             allow_private_remote: parse_env("ALLOW_PRIVATE_REMOTE").unwrap_or(false),
+            face_model: Some(get("FACE_MODEL", "/usr/local/share/hips/face.onnx"))
+                .filter(|v| !v.is_empty()),
+            face_infer_size: parse_env::<i32>("FACE_INFER_SIZE")
+                .unwrap_or(320)
+                .clamp(64, 1280),
+            face_threshold: parse_env::<f32>("FACE_THRESHOLD")
+                .unwrap_or(0.28)
+                .clamp(0.05, 0.95),
+            face_threads: parse_env::<usize>("FACE_THREADS").unwrap_or(1).max(1),
+            face_sessions: parse_env::<usize>("FACE_SESSIONS")
+                .unwrap_or_else(|| workers.div_ceil(2))
+                .clamp(1, workers),
+            face_cache_entries: parse_env("FACE_CACHE_ENTRIES").unwrap_or(50_000),
+            face_cache_ttl: Duration::from_secs(
+                parse_env("FACE_CACHE_TTL_SECS").unwrap_or(24 * 3600),
+            ),
         })
     }
 }
