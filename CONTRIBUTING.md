@@ -9,8 +9,11 @@ public patch into a private draft pull request without running private CI.
 
 After the imported diff is inspected, a maintainer explicitly activates the private pull request.
 That activation runs the normal upstream validation. Once the upstream pull request is merged, the
-public mirror is updated and this pull request is closed automatically. Do not merge public mirror
-pull requests directly.
+public mirror is updated and this pull request is squash-merged, so the commit keeps your
+authorship and you are credited in this repository's contributor list. Resolve each review thread
+once it is addressed; unresolved threads block that merge. If upstream had to rewrite the same
+lines while integrating the change, the pull request is closed instead; the work is still published
+by the mirror. Do not merge public mirror pull requests directly.
 
 Do not include credentials, production data, copyrighted media, or private API responses in issues
 or pull requests.
